@@ -1,0 +1,13 @@
+# Runtime data
+cache.json
+session.json
+dupcleaner.log
+
+# Thumbnail cache
+thumbs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
