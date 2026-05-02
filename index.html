@@ -1,0 +1,2161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DupCleaner — Duplicate File Finder</title>
+<style>
+:root{
+  --bg:#0d1017; --surface:#141821; --card:#1a1f2b; --card2:#212735;
+  --border:#2a3142; --border2:#3a4258;
+  --accent:#6366f1; --accent-l:#818cf8;
+  --danger:#ef4444; --dbg:rgba(239,68,68,.12); --dbd:rgba(239,68,68,.35);
+  --success:#10b981; --warn:#f59e0b;
+  --text:#e5e7eb; --text-dim:#9ca3af; --muted:#6b7280; --dim:#374151;
+}
+*{box-sizing:border-box; margin:0; padding:0}
+html,body{background:var(--bg); color:var(--text); height:100vh; overflow:hidden}
+body{font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; display:flex}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+button{font-family:inherit; cursor:pointer; border:none; outline:none}
+input,textarea,select{font-family:inherit; outline:none}
+
+/* ═══ SIDEBAR ═══ */
+#sb{
+  width:300px; min-width:300px;
+  background:var(--surface); border-right:1px solid var(--border);
+  display:flex; flex-direction:column; overflow:hidden;
+}
+.sb-hd{padding:18px 18px 14px; border-bottom:1px solid var(--border)}
+.sb-hd h1{font-size:16px; font-weight:700; display:flex; align-items:center; gap:8px; color:var(--accent-l)}
+.sb-hd p{color:var(--muted); font-size:11px; margin-top:3px}
+.sb-body{flex:1; overflow-y:auto; padding-bottom:16px}
+.sec{padding:14px 16px 0}
+.sec h3{
+  font-size:10px; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--muted); margin-bottom:10px;
+}
+.fg{margin-bottom:10px}
+.fg label{display:block; font-size:11px; color:var(--text-dim); margin-bottom:5px; font-weight:600}
+textarea.fc, input.fc, select.fc{
+  width:100%; background:var(--card); border:1px solid var(--border);
+  border-radius:6px; color:var(--text); padding:7px 11px; font-size:12px;
+}
+textarea.fc{resize:vertical; min-height:78px; line-height:1.5}
+.fc:focus{border-color:var(--accent)}
+.fc::placeholder{color:var(--muted)}
+hr.div{border:none; border-top:1px solid var(--border); margin:14px 0 0}
+
+.rrow{display:flex; align-items:center; gap:10px}
+input[type=range]{
+  flex:1; -webkit-appearance:none; height:4px;
+  background:var(--border2); border-radius:2px; cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none; width:15px; height:15px;
+  border-radius:50%; background:var(--accent); cursor:pointer;
+}
+input[type=range]::-moz-range-thumb{
+  width:15px; height:15px; border:none;
+  border-radius:50%; background:var(--accent); cursor:pointer;
+}
+.rv{min-width:28px; text-align:right; font-size:12px; font-weight:700; color:var(--accent-l)}
+
+.tog-row{display:flex; align-items:center; justify-content:space-between; padding:5px 0}
+.tog-row > span{font-size:12px; color:var(--text)}
+.tog{
+  width:36px; height:20px; background:var(--dim);
+  border-radius:10px; cursor:pointer; position:relative; flex-shrink:0;
+}
+.tog.on{background:var(--accent)}
+.tog::after{
+  content:''; position:absolute; width:14px; height:14px;
+  background:#fff; border-radius:50%; top:3px; left:3px;
+  transition:left .2s;
+}
+.tog.on::after{left:19px}
+
+.chips{display:flex; flex-wrap:wrap; gap:5px}
+.chip{
+  padding:3px 9px; border:1px solid var(--border);
+  border-radius:20px; font-size:10px; font-weight:700;
+  cursor:pointer; user-select:none;
+  color:var(--muted); background:var(--card);
+}
+.chip:hover{border-color:var(--border2); color:var(--text)}
+.chip.on{
+  background:rgba(99,102,241,.18);
+  border-color:var(--accent); color:var(--accent-l);
+}
+
+/* Category picker */
+.cat-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:6px;
+}
+.cat-btn{
+  display:flex; flex-direction:column; align-items:center;
+  gap:2px; padding:10px 6px;
+  background:var(--card); border:1px solid var(--border);
+  border-radius:8px; cursor:pointer;
+  transition:all .15s; text-align:center;
+}
+.cat-btn:hover{border-color:var(--border2); background:var(--card2)}
+.cat-btn.on{
+  background:rgba(99,102,241,.18); border-color:var(--accent);
+}
+.cat-ico{font-size:18px; line-height:1}
+.cat-lbl{font-size:11px; font-weight:700; color:var(--text)}
+.cat-sub{font-size:9px; color:var(--muted)}
+.cat-btn.on .cat-lbl{color:var(--accent-l)}
+
+/* File picker button */
+.path-actions{
+  display:flex; gap:6px; margin-top:6px;
+}
+.path-actions .btn{flex:1; font-size:11px; padding:5px 8px}
+
+.btn{
+  display:inline-flex; align-items:center; justify-content:center;
+  gap:5px; padding:7px 13px; border-radius:7px;
+  font-size:12px; font-weight:600; white-space:nowrap;
+}
+.btn:disabled{opacity:.4; cursor:not-allowed}
+.btn-primary{background:var(--accent); color:#fff; width:100%; padding:10px}
+.btn-primary:not(:disabled):hover{background:var(--accent-l)}
+.btn-danger{background:var(--dbg); color:var(--danger); border:1px solid var(--dbd)}
+.btn-danger:not(:disabled):hover{background:var(--danger); color:#fff}
+.btn-ghost{background:transparent; border:1px solid var(--border); color:var(--text-dim)}
+.btn-ghost:not(:disabled):hover{border-color:var(--border2); color:var(--text)}
+.btn-sm{font-size:11px; padding:5px 10px; border-radius:6px}
+.btn-xs{font-size:10px; padding:4px 8px; border-radius:5px; gap:3px}
+
+.sg{display:grid; grid-template-columns:1fr 1fr; gap:7px}
+.sb-stat{
+  background:var(--card); border:1px solid var(--border);
+  border-radius:7px; padding:10px; text-align:center;
+}
+.sb-stat .v{font-size:18px; font-weight:800; color:var(--accent-l); line-height:1.1}
+.sb-stat .l{font-size:10px; color:var(--muted); margin-top:2px}
+.sb-stat.wide{grid-column:span 2}
+.sb-stat.wide .v{color:var(--warn); font-size:16px}
+
+/* ═══ MAIN ═══ */
+#main{flex:1; display:flex; flex-direction:column; overflow:hidden}
+
+.topbar{
+  display:flex; align-items:center; gap:12px;
+  padding:10px 18px; border-bottom:1px solid var(--border);
+  background:var(--surface); flex-shrink:0; min-height:52px;
+}
+.topbar-l{display:flex; align-items:center; gap:10px; flex:1; min-width:0}
+.topbar-r{display:flex; align-items:center; gap:8px; flex-shrink:0}
+.prog-wrap{display:flex; align-items:center; gap:10px; flex:1; min-width:0}
+.prog-track{
+  background:var(--border); border-radius:3px;
+  height:6px; min-width:180px; overflow:hidden; flex-shrink:0;
+}
+.prog-bar{
+  height:100%; background:linear-gradient(90deg, var(--accent), var(--accent-l));
+  border-radius:3px; transition:width .35s;
+}
+.prog-shimmer{
+  background:linear-gradient(90deg,var(--accent),var(--accent-l),var(--accent));
+  background-size:200%; animation:sh 1.4s infinite; width:35%;
+}
+@keyframes sh{0%{background-position:200%}100%{background-position:-200%}}
+.sta-txt{
+  font-size:11px; color:var(--text-dim); white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis;
+}
+.tbsep{width:1px; height:22px; background:var(--border)}
+
+.trash-toggle{
+  display:flex; align-items:center; gap:5px; font-size:11px;
+  color:var(--text-dim); cursor:pointer; padding:6px 10px;
+  border-radius:6px; background:var(--card); border:1px solid var(--border);
+  white-space:nowrap;
+}
+.trash-toggle input{accent-color:var(--warn); margin:0; cursor:pointer}
+.trash-toggle.on{background:rgba(245,158,11,.12); border-color:rgba(245,158,11,.4); color:var(--warn)}
+
+#smart-bar{
+  display:none;
+  background:linear-gradient(180deg, rgba(99,102,241,.1) 0%, rgba(99,102,241,.04) 100%);
+  border-bottom:1px solid var(--border);
+  padding:9px 18px; flex-shrink:0;
+  align-items:center; gap:8px; flex-wrap:wrap;
+}
+#smart-bar .lbl{font-size:11px; color:var(--accent-l); font-weight:700}
+.sm-input{
+  background:var(--card); border:1px solid var(--border);
+  border-radius:5px; color:var(--text); padding:4px 9px;
+  font-size:11px; outline:none; width:200px;
+}
+.sm-input:focus{border-color:var(--accent)}
+
+#action-bar{
+  display:none;
+  background:var(--surface); border-bottom:1px solid var(--border);
+  padding:7px 18px; flex-shrink:0;
+  align-items:center; gap:8px; flex-wrap:wrap;
+}
+#action-bar .lbl{font-size:11px; color:var(--muted); font-weight:600}
+.sort-btn{
+  padding:4px 10px; border-radius:5px; font-size:11px;
+  border:1px solid var(--border); background:transparent;
+  color:var(--text-dim); font-weight:600;
+}
+.sort-btn:hover{border-color:var(--border2); color:var(--text)}
+.sort-btn.on{background:rgba(99,102,241,.18); border-color:var(--accent); color:var(--accent-l)}
+.sep{width:1px; height:18px; background:var(--border); flex-shrink:0}
+.grp-count{font-size:11px; color:var(--text-dim); margin-left:auto; font-weight:600}
+
+/* ═══════════════════════════════════════════════════════════════════
+   #results — plain block layout. Previously this was display:flex
+   column, which caused all 15+ group cards to be flex-shrunk to fit
+   the viewport (because default flex-shrink:1 + overflow:hidden on
+   .gcard clipped the children). Block layout lets cards take their
+   natural height and the overflow-y:auto scrolls properly.
+   ═══════════════════════════════════════════════════════════════════ */
+#results{
+  flex:1; overflow-y:auto;
+  padding:16px 18px 50px;
+  display:block;
+}
+
+.empty{
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  min-height:60vh; gap:14px; color:var(--text-dim);
+  text-align:center;
+}
+.empty-ico{font-size:64px; opacity:.18}
+.empty h2{font-size:20px; color:var(--text); font-weight:700}
+.empty p{font-size:13px; max-width:380px; line-height:1.7}
+.empty p b{color:var(--accent-l)}
+
+/* ═══════════════════════════════════════════════════════════════════
+   GROUP CARD — bulletproof fixed-pixel layout
+   ═══════════════════════════════════════════════════════════════════ */
+.gcard{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:12px;
+  overflow:hidden;
+  margin-bottom:14px;     /* replaces parent's gap */
+  flex-shrink:0;          /* extra safety: never compressible */
+  contain:layout style;   /* isolate so flex elsewhere can't reach in */
+}
+.gcard:last-child{margin-bottom:0}
+.gcard:hover{border-color:var(--border2)}
+
+.gcard-hd{
+  display:flex; align-items:center; gap:10px;
+  padding:12px 14px; background:var(--card2);
+  border-bottom:1px solid var(--border);
+  flex-wrap:wrap;
+  min-height:48px;
+}
+.gcard-hd-l{display:flex; align-items:center; gap:9px; flex:1; min-width:200px; flex-wrap:wrap}
+.gcard-hd-r{display:flex; align-items:center; gap:5px; flex-shrink:0; flex-wrap:wrap}
+
+.badge{
+  display:inline-flex; align-items:center;
+  font-size:10px; font-weight:800;
+  padding:3px 8px; border-radius:4px;
+  letter-spacing:.04em;
+}
+.b-exact{background:rgba(99,102,241,.2); color:var(--accent-l); border:1px solid rgba(99,102,241,.4)}
+.b-sim{background:rgba(245,158,11,.15); color:var(--warn); border:1px solid rgba(245,158,11,.35)}
+
+.ginfo{font-size:12px; color:var(--text-dim); display:inline-flex; gap:14px; flex-wrap:wrap}
+.ginfo b{color:var(--text); font-weight:600}
+.ginfo .red{color:var(--danger)}
+
+/* CRITICAL: Flex with FIXED pixel widths/heights — cannot collapse */
+.imgs-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:14px;
+  padding:16px;
+  background:var(--card);
+  min-height:300px; /* hard-coded reservation in case of empty state */
+}
+
+.img-item{
+  /* Fixed dimensions — WILL render at this size no matter what */
+  width:200px;
+  height:300px;
+  flex:0 0 200px;
+  background:var(--card2);
+  border:2px solid transparent;
+  border-radius:10px;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  position:relative;
+}
+.img-item.sel{border-color:var(--danger); background:rgba(239,68,68,.05)}
+.img-item.keep{border-color:var(--success); background:rgba(16,185,129,.04)}
+
+.img-thumb{
+  /* Fixed pixel height — no aspect-ratio (browser quirks) */
+  width:100%;
+  height:160px;
+  background:#0a0e16;
+  cursor:pointer;
+  flex-shrink:0;
+  position:relative;
+  overflow:hidden;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.img-thumb img{
+  max-width:100%;
+  max-height:100%;
+  object-fit:contain;
+  display:block;
+}
+.img-thumb-fallback{
+  position:absolute; inset:0;
+  display:flex; align-items:center; justify-content:center;
+  font-size:42px; color:var(--muted);
+  background:#0a0e16;
+}
+.img-thumb-fallback.hidden{display:none}
+
+.img-thumb .ovl{
+  position:absolute; inset:0;
+  background:rgba(0,0,0,.55);
+  display:flex; align-items:center; justify-content:center;
+  font-size:24px; color:#fff;
+  opacity:0; transition:opacity .15s;
+  pointer-events:none;
+}
+.img-thumb:hover .ovl{opacity:1}
+
+.img-cb{
+  position:absolute; top:7px; left:7px;
+  width:18px; height:18px; cursor:pointer;
+  z-index:3; accent-color:var(--danger);
+}
+.keep-tag{
+  position:absolute; top:7px; right:7px;
+  background:var(--success); color:#000;
+  font-size:9px; font-weight:800;
+  padding:2px 7px; border-radius:4px; z-index:3;
+  letter-spacing:.04em;
+}
+
+.img-meta{
+  padding:8px 10px;
+  border-top:1px solid var(--border);
+  flex:1;
+  min-height:0;
+  overflow:hidden;
+}
+.img-name{
+  font-size:11px; font-weight:600;
+  white-space:nowrap; overflow:hidden;
+  text-overflow:ellipsis;
+}
+.img-detail{
+  font-size:10px; color:var(--text-dim);
+  margin-top:3px; line-height:1.5;
+}
+
+.img-actions{
+  display:flex; gap:4px;
+  padding:6px 10px 8px;
+  flex-shrink:0;
+}
+.img-actions .btn{flex:1; padding:4px 6px; font-size:10px; min-width:0}
+
+/* List view */
+.imgs-row.list{flex-direction:column; flex-wrap:nowrap}
+.imgs-row.list .img-item{
+  width:100%;
+  height:90px;
+  flex-direction:row;
+  flex:0 0 90px;
+}
+.imgs-row.list .img-thumb{width:90px; height:100%; flex-shrink:0}
+.imgs-row.list .img-meta{
+  border-top:none; border-left:1px solid var(--border);
+  display:flex; flex-direction:column; justify-content:center;
+  flex:1;
+}
+.imgs-row.list .img-actions{
+  border-left:1px solid var(--border);
+  flex-shrink:0; align-items:center;
+  flex-wrap:nowrap; padding:0 10px;
+  flex-direction:column; justify-content:center; gap:3px;
+}
+
+/* Quick select bar */
+.qbar{
+  display:flex; align-items:center; gap:6px;
+  padding:8px 12px;
+  border-top:1px solid var(--border);
+  background:var(--card2);
+  flex-wrap:wrap;
+}
+.ql{font-size:10px; color:var(--muted); font-weight:700; margin-right:3px}
+.qbtn{
+  padding:3px 9px; font-size:10px; font-weight:700;
+  border:1px solid var(--border); border-radius:4px;
+  background:transparent; color:var(--text-dim);
+  cursor:pointer;
+}
+.qbtn:hover{border-color:var(--border2); color:var(--text)}
+
+/* ═══ LOGS MODAL ═══ */
+#logs-modal{
+  display:none; position:fixed; inset:0;
+  background:rgba(0,0,0,.85); z-index:101;
+  align-items:center; justify-content:center;
+}
+#logs-modal.open{display:flex}
+.lbox{
+  background:var(--card);
+  border:1px solid var(--border2);
+  border-radius:12px;
+  width:min(94vw, 1100px);
+  height:min(85vh, 700px);
+  display:flex; flex-direction:column;
+  overflow:hidden;
+}
+.lhd{
+  display:flex; align-items:center; gap:8px;
+  padding:10px 14px;
+  background:var(--card2);
+  border-bottom:1px solid var(--border);
+  flex-wrap:wrap;
+}
+.lhd h2{font-size:13px; font-weight:700; color:var(--accent-l)}
+.lhd-info{font-size:11px; color:var(--text-dim); margin-right:auto}
+.lbody{
+  flex:1; overflow-y:auto;
+  padding:8px 14px;
+  font-family: 'SF Mono', Monaco, Consolas, 'Courier New', monospace;
+  font-size:11px;
+  line-height:1.5;
+  background:#0a0e16;
+  color:var(--text-dim);
+}
+.log-line{
+  padding:1px 0;
+  white-space:pre-wrap;
+  word-break:break-word;
+  border-left:2px solid transparent;
+  padding-left:8px;
+  margin-left:-8px;
+}
+.log-line:hover{background:rgba(255,255,255,.02)}
+.log-line.error{color:var(--danger); border-left-color:var(--danger)}
+.log-line.warn{color:var(--warn); border-left-color:var(--warn)}
+.log-line.info{color:var(--text)}
+.log-line.debug{color:var(--text-dim)}
+.log-line.fatal{color:#fff; background:rgba(239,68,68,.15); border-left-color:var(--danger)}
+.log-line.client{color:var(--accent-l)}
+.log-line.client-error{color:var(--danger); border-left-color:var(--danger)}
+.lftr{
+  padding:6px 14px;
+  background:var(--card2);
+  border-top:1px solid var(--border);
+  display:flex; align-items:center; justify-content:space-between;
+  font-size:10px; color:var(--muted);
+}
+
+/* ═══ MODAL ═══ */
+#modal{
+  display:none; position:fixed; inset:0;
+  background:rgba(0,0,0,.92); z-index:100;
+  align-items:center; justify-content:center;
+}
+#modal.open{display:flex}
+.mbox{
+  background:var(--card);
+  border:1px solid var(--border2);
+  border-radius:14px;
+  width:min(96vw, 1200px);
+  max-height:94vh;
+  display:flex; flex-direction:column;
+  overflow:hidden;
+}
+.mhd{
+  display:flex; align-items:center; gap:10px;
+  padding:12px 16px;
+  border-bottom:1px solid var(--border);
+}
+.mhd h2{font-size:14px; font-weight:700; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.mhd-info{font-size:11px; color:var(--text-dim); margin-right:8px}
+.mcls{
+  background:var(--card2); border:none; color:var(--text-dim);
+  width:30px; height:30px; border-radius:6px; font-size:18px;
+}
+.mcls:hover{background:var(--border2); color:var(--text)}
+
+.mc-wrap{display:flex; flex:1; overflow:hidden; min-height:0}
+.mc-panel{
+  flex:1; display:flex; flex-direction:column;
+  overflow:hidden; border-right:1px solid var(--border); min-width:0;
+}
+.mc-panel:last-child{border-right:none}
+.mc-img{
+  flex:1; overflow:hidden;
+  display:flex; align-items:center; justify-content:center;
+  background:#040608; position:relative; min-height:300px;
+}
+.mc-img img{max-width:100%; max-height:100%; object-fit:contain}
+.mc-img .dyn-media{position:relative; z-index:6; max-width:100%; max-height:100%}
+.mc-img:has(.dyn-media) .mnav{display:none}
+.mnav{
+  position:absolute; top:50%; transform:translateY(-50%);
+  background:rgba(0,0,0,.6); color:#fff;
+  width:38px; height:38px; border-radius:50%;
+  font-size:20px; z-index:5;
+  display:flex; align-items:center; justify-content:center;
+}
+.mnav:hover{background:rgba(0,0,0,.85)}
+.mnav.p{left:8px}
+.mnav.n{right:8px}
+.mc-info{padding:10px 14px; background:var(--card2); border-top:1px solid var(--border)}
+.mc-fn{font-size:13px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.mc-row{display:flex; gap:14px; flex-wrap:wrap; margin-top:5px}
+.mc-it{font-size:11px; color:var(--text-dim)}
+.mc-it b{color:var(--text); font-weight:600}
+.mc-md5{font-size:10px; color:var(--muted); font-family:monospace; margin-top:5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.mc-acts{display:flex; gap:6px; padding:9px 14px; background:var(--card2); border-top:1px solid var(--border); flex-wrap:wrap}
+
+.mstrip-wrap{border-top:1px solid var(--border); overflow-x:auto; overflow-y:hidden; background:var(--surface)}
+.mstrip{display:flex; gap:8px; padding:9px 14px; min-height:78px}
+.si{
+  display:flex; align-items:center; gap:8px;
+  background:var(--card2); border:1px solid var(--border);
+  border-radius:7px; padding:6px 10px;
+  cursor:pointer; flex-shrink:0; min-width:150px;
+}
+.si:hover{border-color:var(--border2)}
+.si.on{border-color:var(--accent); background:rgba(99,102,241,.1)}
+.si img{width:48px; height:48px; object-fit:contain; background:#0a0e16; border-radius:4px; flex-shrink:0}
+.si-name{font-size:11px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:130px}
+.si-sz{font-size:10px; color:var(--text-dim)}
+
+/* Toast */
+#toaster{position:fixed; bottom:20px; right:20px; display:flex; flex-direction:column; gap:8px; z-index:200; pointer-events:none}
+.toast{
+  background:var(--card2); border:1px solid var(--border2);
+  border-radius:8px; padding:10px 14px;
+  font-size:12px; min-width:220px;
+  animation:slideIn .25s ease;
+  pointer-events:all;
+  display:flex; align-items:center; gap:9px;
+  box-shadow:0 4px 24px rgba(0,0,0,.5);
+}
+.toast.ok{border-color:rgba(16,185,129,.4); color:var(--success)}
+.toast.err{border-color:var(--dbd); color:var(--danger)}
+.toast.info{border-color:rgba(99,102,241,.4); color:var(--accent-l)}
+@keyframes slideIn{from{transform:translateX(110%);opacity:0}to{transform:none;opacity:1}}
+@keyframes fadeOut{to{opacity:0; transform:translateX(110%)}}
+</style>
+</head>
+<body>
+
+<aside id="sb">
+  <div class="sb-hd">
+    <h1>🔍 DupCleaner <p style="font-size:10px; color:var(--muted); margin:0">Built by <a href="https://github.com/rahul1996pp" target="_blank" style="color:var(--accent-l); text-decoration:none; font-weight:600">Rahul P</a></p></h1>
+    <p>Lightning-fast duplicate file finder — images, videos, audio, docs & more</p>
+  </div>
+  <div class="sb-body">
+
+    <div class="sec">
+      <h3>📁 Scan Folders</h3>
+      <div class="fg">
+        <label>Folder paths — one per line</label>
+        <textarea class="fc" id="dirsIn" rows="4" placeholder="C:\Users\You\Pictures&#10;D:\Photos\2024"></textarea>
+        <div class="path-actions">
+          <button class="btn btn-ghost btn-xs" onclick="App.pickFolder()">📂 Browse…</button>
+          <button class="btn btn-ghost btn-xs" onclick="App.clearFolders()">✕ Clear</button>
+        </div>
+      </div>
+    </div>
+
+    <hr class="div">
+
+    <div class="sec" style="padding-top:12px">
+      <h3>⚙️ Detection Mode</h3>
+      <div class="fg">
+        <select class="fc" id="modeSel">
+          <option value="exact">Exact only (MD5) — fastest</option>
+          <option value="quick" selected>Quick: Exact + dHash — balanced</option>
+          <option value="standard">Standard: Exact + pHash — robust to compression</option>
+          <option value="robust">Robust: Exact + dHash + aHash</option>
+          <option value="smart">Smart: Exact + ALL 3 perceptual (best accuracy)</option>
+        </select>
+        <p style="font-size:10px; color:var(--muted); margin-top:5px; line-height:1.5" id="modeHelp"></p>
+      </div>
+      <div class="fg" id="thrFg">
+        <label>Perceptual sensitivity (lower = stricter)</label>
+        <div class="rrow">
+          <input type="range" min="1" max="20" value="6" id="thrSlider">
+          <span class="rv" id="thrVal">6</span>
+        </div>
+      </div>
+      <div class="tog-row">
+        <span>Skip hidden folders</span>
+        <div class="tog on" id="skipTog"></div>
+      </div>
+      <div class="tog-row">
+        <span>Use cache (faster re-scans)</span>
+        <div class="tog on" id="cacheTog"></div>
+      </div>
+      <div class="fg" style="margin-top:10px">
+        <label>⚙️ Parallel jobs <span style="color:var(--muted); font-weight:400" id="workersCpuTag"></span></label>
+        <div class="rrow">
+          <input type="range" min="1" max="32" value="0" id="threadsSlider">
+          <span class="rv" id="threadsVal" style="min-width:32px">—</span>
+        </div>
+        <div id="threadsHint" style="font-size:10px; color:var(--muted); margin-top:4px; line-height:1.5">
+          Detecting system info…
+        </div>
+        <div style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap" id="workerPresets"></div>
+      </div>
+      <div class="fg" style="margin-top:8px">
+        <label>Min file size (KB, 0 = any)</label>
+        <input type="number" class="fc" id="minKB" value="0" min="0">
+      </div>
+      <div class="fg">
+        <label>Exclude folders (one per line)</label>
+        <textarea class="fc" id="excludeIn" rows="2" placeholder="C:\Photos\Backup&#10;D:\Originals" style="min-height:48px"></textarea>
+        <div class="path-actions">
+          <button class="btn btn-ghost btn-xs" onclick="App.pickExclude()">📂 Browse…</button>
+          <button class="btn btn-ghost btn-xs" onclick="document.getElementById('excludeIn').value=''">✕ Clear</button>
+        </div>
+      </div>
+    </div>
+
+    <hr class="div">
+
+    <div class="sec" style="padding-top:12px">
+      <h3>📂 What to scan</h3>
+      <div class="cat-grid" id="catGrid">
+        <button class="cat-btn on" data-cat="images">
+          <span class="cat-ico">🖼️</span>
+          <span class="cat-lbl">Images</span>
+          <span class="cat-sub">incl. perceptual</span>
+        </button>
+        <button class="cat-btn" data-cat="videos">
+          <span class="cat-ico">🎬</span>
+          <span class="cat-lbl">Videos</span>
+          <span class="cat-sub">fast hash</span>
+        </button>
+        <button class="cat-btn" data-cat="audio">
+          <span class="cat-ico">🎵</span>
+          <span class="cat-lbl">Audio</span>
+          <span class="cat-sub">mp3, flac…</span>
+        </button>
+        <button class="cat-btn" data-cat="documents">
+          <span class="cat-ico">📄</span>
+          <span class="cat-lbl">Documents</span>
+          <span class="cat-sub">pdf, docx…</span>
+        </button>
+        <button class="cat-btn" data-cat="archives">
+          <span class="cat-ico">📦</span>
+          <span class="cat-lbl">Archives</span>
+          <span class="cat-sub">zip, 7z…</span>
+        </button>
+        <button class="cat-btn" data-cat="all">
+          <span class="cat-ico">⭐</span>
+          <span class="cat-lbl">All Files</span>
+          <span class="cat-sub">everything</span>
+        </button>
+      </div>
+      <p style="font-size:10px; color:var(--muted); margin-top:8px; line-height:1.5">
+        Non-image categories use <b>fast partial hashing</b> (first/middle/last 64KB) for files >1MB. A 5GB video hashes in ~5ms.
+      </p>
+    </div>
+
+    <hr class="div">
+
+    <div class="sec" style="padding-top:12px">
+      <h3>📊 Stats</h3>
+      <div class="sg">
+        <div class="sb-stat"><div class="v" id="stSc">—</div><div class="l">Scanned</div></div>
+        <div class="sb-stat"><div class="v" id="stGr">—</div><div class="l">Groups</div></div>
+        <div class="sb-stat wide"><div class="v" id="stWa">—</div><div class="l">Reclaimable Space</div></div>
+      </div>
+    </div>
+
+    <hr class="div">
+
+    <div class="sec" style="padding-top:12px">
+      <h3>💾 Cache</h3>
+      <div class="sg" style="margin-bottom:8px">
+        <div class="sb-stat"><div class="v" id="caEnt" style="font-size:14px; color:var(--text)">—</div><div class="l">Entries</div></div>
+        <div class="sb-stat"><div class="v" id="caHit" style="font-size:14px; color:var(--success)">—</div><div class="l">Hit Rate</div></div>
+      </div>
+      <div style="display:flex; gap:6px">
+        <button class="btn btn-ghost btn-xs" style="flex:1" onclick="App.refreshCacheStats()">↻ Refresh</button>
+        <button class="btn btn-danger btn-xs" style="flex:1" onclick="App.clearCache()">🗑 Clear</button>
+      </div>
+      <p style="font-size:10px; color:var(--muted); margin-top:5px; line-height:1.5">
+        Cached hashes make repeat scans of unchanged folders nearly instant.
+      </p>
+    </div>
+
+    <hr class="div">
+
+    <div class="sec" style="padding-top:12px">
+      <h3>📁 Session</h3>
+      <p style="font-size:10px; color:var(--text-dim); margin-bottom:8px; line-height:1.5" id="sessInfo">
+        Save current scan results and selections to resume later.
+      </p>
+      <div style="display:flex; gap:6px; margin-bottom:6px">
+        <button class="btn btn-ghost btn-xs" style="flex:1" onclick="App.saveSession()">💾 Save</button>
+        <button class="btn btn-ghost btn-xs" style="flex:1" id="loadSessBtn" onclick="App.loadSession()" disabled>📂 Load</button>
+      </div>
+      <button class="btn btn-ghost btn-xs" style="width:100%" onclick="App.clearSession()">✕ Delete saved session</button>
+    </div>
+
+    <hr class="div">
+
+    <div class="sec" style="padding-top:12px; padding-bottom:14px">
+      <button class="btn btn-primary" id="scanBtn" onclick="App.startScan()">🔍 Start Scan</button>
+      <div style="display:flex; gap:6px; margin-top:8px">
+        <button class="btn btn-ghost btn-sm" style="flex:1" id="expBtn" onclick="App.exportCSV()" disabled>📥 CSV</button>
+        <button class="btn btn-ghost btn-sm" style="flex:1" id="clrBtn" onclick="App.clearAll()" disabled>✕ Clear</button>
+      </div>
+      <button class="btn btn-ghost btn-sm" style="width:100%; margin-top:6px" onclick="LogsUI.open()">📋 Live Debug Logs</button>
+    </div>
+
+    <div style="padding:12px 16px; border-top:1px solid var(--border); text-align:center">
+      <p style="font-size:10px; color:var(--muted); margin:0">Built by <a href="https://github.com/rahul1996pp" target="_blank" style="color:var(--accent-l); text-decoration:none; font-weight:600">Rahul P</a></p>
+      <p style="font-size:10px; margin:3px 0 0"><a href="https://github.com/rahul1996pp/DupCleaner" target="_blank" style="color:var(--text-dim); text-decoration:none">⭐ GitHub</a></p>
+    </div>
+
+  </div>
+</aside>
+
+<main id="main">
+
+  <div class="topbar">
+    <div class="topbar-l">
+      <div class="prog-wrap" id="progWrap" style="display:none">
+        <div class="prog-track"><div class="prog-bar prog-shimmer" id="progBar"></div></div>
+        <div class="sta-txt" id="staTxt">Scanning...</div>
+        <button class="btn btn-danger btn-xs" id="cancelBtn" onclick="App.cancelScan()">⏹ Cancel</button>
+      </div>
+      <div id="doneMsg" class="sta-txt" style="display:none"></div>
+    </div>
+    <div class="topbar-r">
+      <input type="text" id="searchIn" class="sm-input" placeholder="🔍 Filter by name/path..."
+        oninput="App.applyFilters()" style="display:none; width:220px">
+      <label class="trash-toggle on" id="trashLabel">
+        <input type="checkbox" id="trashChk" checked>
+        <span>🗑️ Recycle Bin</span>
+      </label>
+      <button class="btn btn-danger btn-sm" id="delSelBtn" onclick="App.deleteSelected()" style="display:none">Delete (0)</button>
+      <div class="tbsep"></div>
+      <button class="btn btn-ghost btn-sm" id="viewBtn" onclick="App.toggleView()">⊞ Grid</button>
+    </div>
+  </div>
+
+  <div id="smart-bar">
+    <span class="lbl">⚡ Smart Select:</span>
+    <button class="btn btn-ghost btn-xs" onclick="App.smartAll('highest_res')">Keep Highest Res</button>
+    <button class="btn btn-ghost btn-xs" onclick="App.smartAll('largest')">Keep Largest File</button>
+    <button class="btn btn-ghost btn-xs" onclick="App.smartAll('oldest')">Keep Oldest</button>
+    <button class="btn btn-ghost btn-xs" onclick="App.smartAll('newest')">Keep Newest</button>
+    <div class="sep"></div>
+    <span style="font-size:11px; color:var(--text-dim)">Prefer folder:</span>
+    <input type="text" id="prefDir" class="sm-input" placeholder="e.g. C:\Photos\Originals">
+    <button class="btn btn-ghost btn-xs" onclick="App.smartAll('prefer_dir')">Apply</button>
+    <div class="sep"></div>
+    <button class="btn btn-ghost btn-xs" onclick="App.clearAllSel()">Clear All</button>
+  </div>
+
+  <div id="action-bar">
+    <span class="lbl">Sort:</span>
+    <button class="sort-btn on" data-sort="wasted" onclick="App.setSort('wasted',this)">Wasted Space</button>
+    <button class="sort-btn" data-sort="count" onclick="App.setSort('count',this)">Image Count</button>
+    <button class="sort-btn" data-sort="sim" onclick="App.setSort('sim',this)">Similarity</button>
+    <button class="sort-btn" data-sort="total" onclick="App.setSort('total',this)">Total Size</button>
+    <div class="sep"></div>
+    <span class="lbl">Filter:</span>
+    <button class="sort-btn on" data-flt="all" onclick="App.setFlt('all',this)">All</button>
+    <button class="sort-btn" data-flt="exact" onclick="App.setFlt('exact',this)">Exact</button>
+    <button class="sort-btn" data-flt="perceptual" onclick="App.setFlt('perceptual',this)">Perceptual</button>
+    <span class="grp-count" id="grpCount"></span>
+  </div>
+
+  <div id="results">
+    <div class="empty">
+      <div class="empty-ico">🔍</div>
+      <h2>Find Duplicate Files</h2>
+      <p>Enter folder paths in the sidebar and click <b>Start Scan</b>.</p>
+      <p>Supports images (JPG, PNG, HEIC, WEBP, RAW…), videos, audio, documents & archives.</p>
+    </div>
+  </div>
+
+</main>
+
+<div id="modal">
+  <div class="mbox">
+    <div class="mhd">
+      <h2 id="mTitle">Preview</h2>
+      <span class="mhd-info" id="mGrpInfo"></span>
+      <button class="btn btn-ghost btn-xs" id="cmpBtn" onclick="App.toggleCmp()">⇌ Compare</button>
+      <button class="mcls" onclick="App.closeModal()">✕</button>
+    </div>
+    <div class="mc-wrap">
+      <div class="mc-panel" id="mcL">
+        <div class="mc-img">
+          <button class="mnav p" onclick="App.mNav(-1)">‹</button>
+          <img id="mImgL" alt="">
+          <button class="mnav n" onclick="App.mNav(1)">›</button>
+        </div>
+        <div class="mc-info">
+          <div class="mc-fn" id="mFnL"></div>
+          <div class="mc-row">
+            <span class="mc-it">📦 <b id="mSzL"></b></span>
+            <span class="mc-it">📐 <b id="mDmL"></b></span>
+            <span class="mc-it">⭐ <b id="mMpL"></b></span>
+            <span class="mc-it">🏷️ <b id="mFtL"></b></span>
+            <span class="mc-it">🕑 <b id="mDtL"></b></span>
+          </div>
+          <div class="mc-md5" id="mMdL"></div>
+        </div>
+        <div class="mc-acts">
+          <button class="btn btn-danger btn-sm" onclick="App.delPrev('L')">🗑️ Delete</button>
+          <button class="btn btn-ghost btn-sm" onclick="App.openFinder('L')">📂 Show in Folder</button>
+        </div>
+      </div>
+      <div class="mc-panel" id="mcR" style="display:none">
+        <div class="mc-img"><img id="mImgR" alt=""></div>
+        <div class="mc-info">
+          <div class="mc-fn" id="mFnR"></div>
+          <div class="mc-row">
+            <span class="mc-it">📦 <b id="mSzR"></b></span>
+            <span class="mc-it">📐 <b id="mDmR"></b></span>
+            <span class="mc-it">⭐ <b id="mMpR"></b></span>
+            <span class="mc-it">🏷️ <b id="mFtR"></b></span>
+            <span class="mc-it">🕑 <b id="mDtR"></b></span>
+          </div>
+        </div>
+        <div class="mc-acts">
+          <button class="btn btn-danger btn-sm" onclick="App.delPrev('R')">🗑️ Delete</button>
+          <button class="btn btn-ghost btn-sm" onclick="App.openFinder('R')">📂 Show in Folder</button>
+        </div>
+      </div>
+    </div>
+    <div class="mstrip-wrap">
+      <div class="mstrip" id="mStrip"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Live Logs Modal -->
+<div id="logs-modal">
+  <div class="lbox">
+    <div class="lhd">
+      <h2>📋 Live Logs</h2>
+      <span class="lhd-info" id="lLineCount">0 lines</span>
+      <select class="sm-input" id="lLevelFilter" onchange="LogsUI.refresh(true)" style="width:auto">
+        <option value="all">All levels</option>
+        <option value="error">Errors only</option>
+        <option value="warn">Warn+</option>
+        <option value="info">Info+</option>
+        <option value="debug">Debug+</option>
+        <option value="client">Client only</option>
+      </select>
+      <input type="text" class="sm-input" id="lSearch" placeholder="Filter text…"
+        oninput="LogsUI.refresh(true)" style="width:160px">
+      <label style="display:flex; align-items:center; gap:5px; font-size:11px; color:var(--text-dim); cursor:pointer">
+        <input type="checkbox" id="lFollow" checked> Auto-scroll
+      </label>
+      <button class="btn btn-ghost btn-xs" onclick="LogsUI.copyToClipboard()">📋 Copy</button>
+      <button class="btn btn-ghost btn-xs" onclick="window.open('/api/logs','_blank')">↗ Full</button>
+      <button class="mcls" onclick="LogsUI.close()">✕</button>
+    </div>
+    <div class="lbody" id="lBody">
+      <div style="padding:30px; text-align:center; color:var(--muted)">Loading...</div>
+    </div>
+    <div class="lftr">
+      <span style="font-size:10px; color:var(--muted)" id="lStatus">Polling every 1.5s</span>
+    </div>
+  </div>
+</div>
+
+<div id="toaster"></div>
+
+<script>
+"use strict";
+
+// ═══════════════════════════════════════════════════════════════════
+// Logging — sends client errors to server log file
+// ═══════════════════════════════════════════════════════════════════
+const Logger = {
+  send(level, msg, file, line, stack) {
+    try {
+      fetch('/api/log', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({level, msg:String(msg), file:file||'', line:line||0, stack:stack||''})
+      }).catch(()=>{});
+    } catch(e){}
+  },
+  info(msg)  { console.log('[INFO]', msg);  this.send('info', msg); },
+  debug(msg) { console.log('[DEBUG]', msg); this.send('debug', msg); },
+  warn(msg)  { console.warn('[WARN]', msg); this.send('warn', msg); },
+  error(msg, err) {
+    console.error('[ERROR]', msg, err);
+    const stack = err && err.stack ? err.stack : '';
+    this.send('error', msg + (err ? ': ' + err.message : ''), '', 0, stack);
+  }
+};
+
+window.addEventListener('error', e => {
+  Logger.send('error', e.message || 'Unknown error', e.filename, e.lineno,
+    e.error && e.error.stack ? e.error.stack : '');
+});
+window.addEventListener('unhandledrejection', e => {
+  Logger.send('error', 'Unhandled promise: ' + (e.reason && e.reason.message || e.reason));
+});
+
+Logger.info('UI loaded');
+
+// ═══════════════════════════════════════════════════════════════════
+// Application
+// ═══════════════════════════════════════════════════════════════════
+const App = {
+  groups: [],
+  byId: new Map(),
+  dispGroups: [],
+  selPaths: new Set(),
+  sort: 'wasted', flt: 'all', view: 'grid',
+  pollTimer: null, scanDone: false,
+  modGid: null, modIdxL: 0, modIdxR: null, modCmp: false,
+
+  // ─── Init ───
+  init() {
+    Logger.debug('App.init');
+    document.getElementById('thrSlider').addEventListener('input', e => {
+      document.getElementById('thrVal').textContent = e.target.value;
+    });
+    document.getElementById('skipTog').addEventListener('click', e => {
+      e.currentTarget.classList.toggle('on');
+    });
+    document.getElementById('cacheTog').addEventListener('click', e => {
+      e.currentTarget.classList.toggle('on');
+    });
+    // ── Worker slider — loads real system info from backend ──────────
+    this._sysInfo = null;
+    this._initWorkerSlider();
+
+    // Category picker
+    document.querySelectorAll('#catGrid .cat-btn').forEach(b => {
+      b.addEventListener('click', () => {
+        document.querySelectorAll('#catGrid .cat-btn').forEach(x => x.classList.remove('on'));
+        b.classList.add('on');
+        const isImg = b.dataset.cat === 'images';
+        const modeSel = document.getElementById('modeSel');
+        const thrFg = document.getElementById('thrFg');
+        modeSel.disabled = !isImg;
+        modeSel.style.opacity = isImg ? '1' : '0.5';
+        if (!isImg) {
+          modeSel.value = 'exact';
+          thrFg.style.display = 'none';
+          App.toast('Non-image category: using exact (partial-hash) matching', 'info');
+        } else {
+          App.onModeChange();
+        }
+      });
+    });
+    document.getElementById('trashChk').addEventListener('change', e => {
+      document.getElementById('trashLabel').classList.toggle('on', e.target.checked);
+    });
+    document.getElementById('modeSel').addEventListener('change', () => this.onModeChange());
+    this.initDragDrop();
+    document.addEventListener('keydown', e => {
+      if (!document.getElementById('modal').classList.contains('open')) return;
+      if (e.key === 'Escape') this.closeModal();
+      if (e.key === 'ArrowLeft') this.mNav(-1);
+      if (e.key === 'ArrowRight') this.mNav(1);
+    });
+    document.getElementById('modal').addEventListener('click', e => {
+      if (e.target === document.getElementById('modal')) this.closeModal();
+    });
+    this.onModeChange();
+    this.refreshCacheStats();
+    this.checkSession();
+    Logger.info('App initialized');
+  },
+
+  async _initWorkerSlider() {
+    const slider  = document.getElementById('threadsSlider');
+    const valEl   = document.getElementById('threadsVal');
+    const hintEl  = document.getElementById('threadsHint');
+    const cpuTag  = document.getElementById('workersCpuTag');
+    const presets = document.getElementById('workerPresets');
+    try {
+      const s = await fetch('/api/system').then(r => r.json());
+      this._sysInfo = s;
+      const numCPU = s.num_cpu || 1;
+      const ramGB  = +(s.ram_gb || 0).toFixed(1);
+      const rec    = s.recommended || numCPU;
+      const perMB  = s.per_image_mb || 96;
+      cpuTag.textContent = '(' + numCPU + ' cores · ' + ramGB + ' GB RAM)';
+      slider.max   = numCPU * 2;
+      slider.value = rec;
+      slider.min   = 1;
+      const updateLabel = () => {
+        const v      = parseInt(slider.value, 10);
+        const ramEst = (v * perMB / 1024).toFixed(1);
+        const pct    = Math.round(v / numCPU * 100);
+        valEl.textContent = v;
+        hintEl.innerHTML =
+          '<b>' + v + ' workers</b> → ' +
+          '<b style="color:var(--accent-l)">' + pct + '% CPU</b> · ' +
+          'est. <b style="color:var(--warn)">~' + ramEst + ' GB</b> peak RAM' +
+          (v === rec ? ' <span style="color:var(--success)">✓ recommended</span>' :
+           v > numCPU ? ' <span style="color:var(--warn)">⚠ oversubscribed</span>' : '');
+      };
+      slider.addEventListener('input', updateLabel);
+      updateLabel();
+      presets.innerHTML = '';
+      const addPreset = (label, val) => {
+        const b = document.createElement('button');
+        b.className = 'btn btn-ghost btn-xs';
+        b.textContent = label;
+        b.addEventListener('click', () => { slider.value = val; updateLabel(); });
+        presets.appendChild(b);
+      };
+      const eco = Math.max(1, Math.floor(numCPU / 4));
+      addPreset('🐢 Economy (' + eco + ')', eco);
+      addPreset('⚡ Recommended (' + rec + ')', rec);
+      addPreset('🔥 Full CPU (' + numCPU + ')', numCPU);
+      if (numCPU > 1) addPreset('💪 Max (' + (numCPU*2) + ')', numCPU * 2);
+    } catch(e) {
+      Logger.error('System info failed', e);
+      slider.max = 32; slider.value = 4; slider.min = 1;
+      hintEl.textContent = 'Could not detect system. Set manually.';
+      valEl.textContent = slider.value;
+      slider.addEventListener('input', () => { valEl.textContent = slider.value; });
+    }
+  },
+
+  initDragDrop() {
+    const ta = document.getElementById('dirsIn');
+    ['dragenter','dragover','dragleave','drop'].forEach(ev => {
+      ta.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); });
+    });
+    ta.addEventListener('dragover', () => ta.style.borderColor = 'var(--accent)');
+    ta.addEventListener('dragleave', () => ta.style.borderColor = '');
+    ta.addEventListener('drop', e => {
+      ta.style.borderColor = '';
+      const items = Array.from(e.dataTransfer.items || []);
+      const paths = [];
+      // Try to get paths via DataTransferItemList
+      for (const it of items) {
+        if (it.kind === 'file') {
+          const f = it.getAsFile();
+          if (f) {
+            // Browser security limits: we only get the filename, not the absolute path.
+            // But on some platforms with the right APIs we can get more. As fallback,
+            // suggest the user paste paths.
+            if (f.path) paths.push(f.path);  // Electron-style, won't work in browser
+            else paths.push(f.name);
+          }
+        }
+      }
+      if (paths.length) {
+        const cur = ta.value.trim();
+        const sep = cur ? '\n' : '';
+        ta.value = cur + sep + paths.join('\n');
+        this.toast('Dropped ' + paths.length + ' folder' + (paths.length>1?'s':''), 'info');
+      } else {
+        this.toast('Drag-drop blocked by browser. Please paste paths instead.', 'err');
+      }
+    });
+  },
+
+  onModeChange() {
+    const m = document.getElementById('modeSel').value;
+    const help = {
+      exact:    'Only finds byte-identical files via MD5. Very fast. Misses resized/recompressed copies.',
+      quick:    'Default. Catches identical files + visually similar via dHash. Fast and effective.',
+      standard: 'pHash uses DCT — very robust against compression and quality changes.',
+      robust:   'Combines dHash + aHash for higher confidence on near-duplicates.',
+      smart:    'Most accurate. Combines all 3 perceptual hashes (2-of-3 must match). Slower.',
+    };
+    document.getElementById('modeHelp').textContent = help[m] || '';
+    document.getElementById('thrFg').style.display = m === 'exact' ? 'none' : '';
+  },
+
+  getCategory() {
+    const on = document.querySelector('#catGrid .cat-btn.on');
+    return on ? on.dataset.cat : 'images';
+  },
+
+  // ─── Scan ───
+  async startScan() {
+    const dirsRaw = document.getElementById('dirsIn').value.trim();
+    const dirs = dirsRaw.split('\n').map(s => s.trim()).filter(Boolean);
+    if (!dirs.length) { this.toast('Enter at least one folder path', 'err'); return; }
+
+    const excludesRaw = document.getElementById('excludeIn').value.trim();
+    const excludes = excludesRaw ? excludesRaw.split('\n').map(s => s.trim()).filter(Boolean) : [];
+
+    const mode = document.getElementById('modeSel').value;
+    let thr = parseInt(document.getElementById('thrSlider').value, 10);
+    if (mode === 'exact') thr = 0;
+
+    const useCache = document.getElementById('cacheTog').classList.contains('on');
+    const threads = parseInt(document.getElementById('threadsSlider').value, 10) || 0;
+
+    const scanBtn = document.getElementById('scanBtn');
+    scanBtn.disabled = true;
+    scanBtn.textContent = '⏳ Scanning...';
+    this.clearAll();
+    document.getElementById('progWrap').style.display = 'flex';
+    document.getElementById('progBar').className = 'prog-bar prog-shimmer';
+
+    Logger.info('Starting scan: mode=' + mode + ' threshold=' + thr + ' cache=' + useCache);
+
+    try {
+      const r = await fetch('/api/scan', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          dirs,
+          category: this.getCategory(),
+          mode,
+          threshold: thr,
+          skip_hidden: document.getElementById('skipTog').classList.contains('on'),
+          min_size_kb: parseInt(document.getElementById('minKB').value, 10) || 0,
+          exts_filter: [],
+          use_cache: useCache,
+          exclude_dirs: excludes,
+          threads: threads,
+        })
+      });
+      if (!r.ok) throw new Error(await r.text());
+    } catch (e) {
+      Logger.error('Scan request failed', e);
+      this.toast('Scan error: ' + e.message, 'err');
+      document.getElementById('progWrap').style.display = 'none';
+      scanBtn.disabled = false;
+      scanBtn.textContent = '🔍 Start Scan';
+      return;
+    }
+    this.scanDone = false;
+    this.pollTimer = setInterval(() => this.pollProgress(), 350);
+  },
+
+  async cancelScan() {
+    Logger.info('Cancelling scan');
+    try {
+      await fetch('/api/scan/cancel', {method:'POST'});
+      this.toast('Cancelling scan...', 'info');
+    } catch(e){
+      Logger.error('Cancel failed', e);
+    }
+  },
+
+  async pollProgress() {
+    try {
+      const p = await fetch('/api/progress').then(r => r.json());
+      const pct = p.total > 0 ? (p.processed / p.total * 100) : 0;
+      const bar = document.getElementById('progBar');
+      bar.className = 'prog-bar';
+      bar.style.width = pct.toFixed(1) + '%';
+      document.getElementById('staTxt').textContent =
+        p.status + (p.rate > 0 ? ' · ' + Math.round(p.rate) + ' img/s' : '') +
+        (p.heap_mb > 0 ? ' · RAM: ' + Math.round(p.heap_mb) + 'MB heap' : '');
+
+      if (p.done && !this.scanDone) {
+        this.scanDone = true;
+        clearInterval(this.pollTimer);
+        this.pollTimer = null;
+        bar.style.width = '100%';
+        Logger.info('Scan completed: ' + p.groups + ' groups, ' + p.wasted_mb + ' MB');
+        document.getElementById('stSc').textContent = (p.processed||0).toLocaleString();
+        document.getElementById('stGr').textContent = (p.groups||0).toLocaleString();
+        document.getElementById('stWa').textContent = (p.wasted_mb||0).toFixed(1) + ' MB';
+        document.getElementById('scanBtn').disabled = false;
+        document.getElementById('scanBtn').textContent = '🔍 Start Scan';
+        document.getElementById('expBtn').disabled = false;
+        document.getElementById('clrBtn').disabled = false;
+        document.getElementById('progWrap').style.display = 'none';
+        document.getElementById('doneMsg').style.display = '';
+        document.getElementById('doneMsg').textContent = p.status;
+
+        if (p.groups > 0) {
+          document.getElementById('smart-bar').style.display = 'flex';
+          document.getElementById('action-bar').style.display = 'flex';
+          document.getElementById('searchIn').style.display = '';
+          await this.loadResults();
+        } else {
+          document.getElementById('results').innerHTML =
+            '<div class="empty"><div class="empty-ico">🎉</div><h2>No Duplicates Found</h2><p>All your files are unique!</p></div>';
+        }
+        this.refreshCacheStats();
+      }
+    } catch (e) {
+      Logger.error('Poll error', e);
+    }
+  },
+
+  clearAll() {
+    Logger.debug('clearAll');
+    this.groups = []; this.dispGroups = []; this.byId.clear();
+    this.selPaths.clear();
+    this.modGid = null; this.modIdxL = 0; this.modIdxR = null;
+    document.getElementById('results').innerHTML =
+      '<div class="empty"><div class="empty-ico">🔍</div><h2>Find Duplicate Files</h2><p>Enter folder paths and click Start Scan.</p></div>';
+    document.getElementById('smart-bar').style.display = 'none';
+    document.getElementById('action-bar').style.display = 'none';
+    document.getElementById('searchIn').style.display = 'none';
+    document.getElementById('searchIn').value = '';
+    document.getElementById('doneMsg').style.display = 'none';
+    document.getElementById('expBtn').disabled = true;
+    document.getElementById('clrBtn').disabled = true;
+    document.getElementById('stSc').textContent = '—';
+    document.getElementById('stGr').textContent = '—';
+    document.getElementById('stWa').textContent = '—';
+    this.updateDelBtn();
+  },
+
+  // ─── Folder picker (uses native OS dialog via backend) ───
+  async pickFolder() {
+    try {
+      const d = await fetch('/api/folder/pick').then(r => r.json());
+      const paths = d.paths || [];
+      if (!paths.length) return;
+      const ta = document.getElementById('dirsIn');
+      const cur = ta.value.trim();
+      const existing = new Set(cur ? cur.split('\n').map(s => s.trim()).filter(Boolean) : []);
+      let added = 0;
+      paths.forEach(p => {
+        if (!existing.has(p)) {
+          existing.add(p);
+          added++;
+        }
+      });
+      ta.value = Array.from(existing).join('\n');
+      if (added) this.toast('Added ' + added + ' folder' + (added > 1 ? 's' : ''), 'ok');
+    } catch (e) {
+      Logger.error('Folder pick failed', e);
+      this.toast('Folder picker failed: ' + e.message, 'err');
+    }
+  },
+
+  async pickExclude() {
+    try {
+      const d = await fetch('/api/folder/pick').then(r => r.json());
+      const paths = d.paths || [];
+      if (!paths.length) return;
+      const ta = document.getElementById('excludeIn');
+      const cur = ta.value.trim();
+      const existing = new Set(cur ? cur.split('\n').map(s => s.trim()).filter(Boolean) : []);
+      paths.forEach(p => existing.add(p));
+      ta.value = Array.from(existing).join('\n');
+      this.toast('Added to exclude list', 'ok');
+    } catch (e) {
+      Logger.error('Exclude pick failed', e);
+    }
+  },
+
+  clearFolders() {
+    document.getElementById('dirsIn').value = '';
+  },
+
+  async loadResults() {
+    try {
+      Logger.debug('Fetching /api/results');
+      const d = await fetch('/api/results').then(r => r.json());
+      this.groups = d.groups || [];
+      this.byId.clear();
+      this.groups.forEach(g => this.byId.set(g.id, g));
+      Logger.info('Loaded ' + this.groups.length + ' groups');
+
+      // Validate group structure
+      let totalImgs = 0;
+      for (const g of this.groups) {
+        if (!g.images || !Array.isArray(g.images)) {
+          Logger.warn('Group ' + g.id + ' has invalid images field: ' + typeof g.images);
+        } else {
+          totalImgs += g.images.length;
+        }
+      }
+      Logger.debug('Total images across groups: ' + totalImgs);
+
+      this.applyFilters();
+    } catch (e) {
+      Logger.error('Load results failed', e);
+      this.toast('Load error: ' + e.message, 'err');
+    }
+  },
+
+  applyFilters() {
+    let gs = this.groups.slice();
+    if (this.flt === 'exact') gs = gs.filter(g => g.exact);
+    else if (this.flt === 'perceptual') gs = gs.filter(g => !g.exact);
+
+    // Text search across image names + paths within groups
+    const q = (document.getElementById('searchIn').value || '').trim().toLowerCase();
+    if (q) {
+      gs = gs.filter(g => {
+        if (!g.images) return false;
+        return g.images.some(img =>
+          (img.name||'').toLowerCase().includes(q) ||
+          (img.path||'').toLowerCase().includes(q));
+      });
+    }
+
+    switch (this.sort) {
+      case 'wasted': gs.sort((a,b) => b.wasted_size - a.wasted_size); break;
+      case 'count':  gs.sort((a,b) => b.images.length - a.images.length); break;
+      case 'sim':    gs.sort((a,b) => b.similarity - a.similarity); break;
+      case 'total':  gs.sort((a,b) => b.total_size - a.total_size); break;
+    }
+    this.dispGroups = gs;
+    this.render();
+  },
+
+  setSort(s, el) {
+    this.sort = s;
+    document.querySelectorAll('.sort-btn[data-sort]').forEach(b => b.classList.toggle('on', b === el));
+    this.applyFilters();
+  },
+  setFlt(f, el) {
+    this.flt = f;
+    document.querySelectorAll('.sort-btn[data-flt]').forEach(b => b.classList.toggle('on', b === el));
+    this.applyFilters();
+  },
+  toggleView() {
+    this.view = this.view === 'grid' ? 'list' : 'grid';
+    document.getElementById('viewBtn').textContent = this.view === 'grid' ? '☰ List' : '⊞ Grid';
+    Logger.debug('View toggled to: ' + this.view);
+    this.render();
+  },
+
+  // ─── Render — wrapped in try/catch for safety ───
+  render() {
+    try {
+      const root = document.getElementById('results');
+      root.innerHTML = '';
+      if (!this.dispGroups.length) {
+        root.innerHTML = '<div class="empty"><div class="empty-ico">📭</div><h2>No matches</h2><p>Try changing filters above.</p></div>';
+        document.getElementById('grpCount').textContent = '';
+        this.updateDelBtn();
+        return;
+      }
+      document.getElementById('grpCount').textContent =
+        this.dispGroups.length + ' group' + (this.dispGroups.length !== 1 ? 's' : '');
+      const frag = document.createDocumentFragment();
+      let renderedGroups = 0, renderedImgs = 0;
+      for (const g of this.dispGroups) {
+        try {
+          frag.appendChild(this.buildGroupCard(g));
+          renderedGroups++;
+          renderedImgs += (g.images || []).length;
+        } catch (e) {
+          Logger.error('Failed to render group ' + g.id, e);
+        }
+      }
+      root.appendChild(frag);
+      Logger.info('Rendered ' + renderedGroups + ' groups, ' + renderedImgs + ' images');
+      this.updateDelBtn();
+    } catch (e) {
+      Logger.error('render() failed', e);
+      this.toast('Render error — check logs', 'err');
+    }
+  },
+
+  buildGroupCard(g) {
+    const card = this.el('div', 'gcard'); card.id = 'gc' + g.id;
+    const imgs = Array.isArray(g.images) ? g.images : [];
+
+    // Header
+    const hd = this.el('div', 'gcard-hd');
+    const hdl = this.el('div', 'gcard-hd-l');
+    const algoTag = g.algorithm ? g.algorithm.toUpperCase() : (g.exact ? 'EXACT' : 'PERCEPTUAL');
+    const badgeText = g.exact ? algoTag : '~' + Math.round(g.similarity * 100) + '% (' + algoTag + ')';
+    hdl.appendChild(this.el('span', 'badge ' + (g.exact ? 'b-exact' : 'b-sim'), badgeText));
+    const ginfo = this.el('span', 'ginfo');
+    ginfo.innerHTML = imgs.length + ' images &nbsp;·&nbsp; Total: <b>' + this.fmtSz(g.total_size) +
+      '</b> &nbsp;·&nbsp; Reclaimable: <b class="red">' + this.fmtSz(g.wasted_size) + '</b>';
+    hdl.appendChild(ginfo);
+    hd.appendChild(hdl);
+
+    const hdr = this.el('div', 'gcard-hd-r');
+    hdr.appendChild(this.btn('Keep Oldest', () => this.quickSel(g.id, 'oldest'), 'btn btn-ghost btn-xs'));
+    hdr.appendChild(this.btn('Keep Newest', () => this.quickSel(g.id, 'newest'), 'btn btn-ghost btn-xs'));
+    hdr.appendChild(this.btn('Keep Largest', () => this.quickSel(g.id, 'largest'), 'btn btn-ghost btn-xs'));
+    hdr.appendChild(this.btn('Keep Best Res', () => this.quickSel(g.id, 'highest_res'), 'btn btn-ghost btn-xs'));
+    hdr.appendChild(this.btn('Delete Dupes', () => this.delDupes(g.id), 'btn btn-danger btn-xs'));
+    hd.appendChild(hdr);
+    card.appendChild(hd);
+
+    // Image row
+    const row = this.el('div', 'imgs-row' + (this.view === 'list' ? ' list' : ''));
+    if (imgs.length === 0) {
+      row.innerHTML = '<div style="padding:30px; color:var(--muted); font-size:12px">No images in this group.</div>';
+    } else {
+      imgs.forEach((img, i) => {
+        try {
+          row.appendChild(this.buildImageItem(g, i, img));
+        } catch (e) {
+          Logger.error('Failed to build image item ' + i + ' in group ' + g.id, e);
+        }
+      });
+    }
+    card.appendChild(row);
+
+    // Quick bar
+    const qb = this.el('div', 'qbar');
+    qb.appendChild(this.el('span', 'ql', 'Select:'));
+    qb.appendChild(this.btn('All',                       () => this.selGrp(g.id, 'all'),               'qbtn'));
+    qb.appendChild(this.btn('None',                      () => this.selGrp(g.id, 'none'),              'qbtn'));
+    qb.appendChild(this.btn('Dupes (keep oldest)',       () => this.selGrp(g.id, 'dup_oldest'),        'qbtn'));
+    qb.appendChild(this.btn('Dupes (keep newest)',       () => this.selGrp(g.id, 'dup_newest'),        'qbtn'));
+    qb.appendChild(this.btn('Dupes (keep largest)',      () => this.selGrp(g.id, 'dup_largest'),       'qbtn'));
+    qb.appendChild(this.btn('Dupes (keep smallest)',     () => this.selGrp(g.id, 'dup_smallest'),      'qbtn'));
+    qb.appendChild(this.btn('Dupes (keep best res)',     () => this.selGrp(g.id, 'dup_highest_res'),   'qbtn'));
+    card.appendChild(qb);
+
+    return card;
+  },
+
+  buildImageItem(g, i, img) {
+    if (!img || typeof img !== 'object') {
+      throw new Error('Invalid image object at index ' + i);
+    }
+    const path = img.path || '';
+    const name = img.name || '(unnamed)';
+    const isSel = this.selPaths.has(path);
+    const isKeep = i === 0;
+    const item = this.el('div', 'img-item' + (isSel ? ' sel' : isKeep ? ' keep' : ''));
+    item.id = 'ii-' + g.id + '-' + i;
+
+    // Thumbnail (FIXED HEIGHT 160px)
+    const thumb = this.el('div', 'img-thumb');
+    thumb.addEventListener('click', () => this.openPreview(g.id, i));
+
+    // Always-present fallback (shows until image loads or if it fails)
+    const fb = this.el('div', 'img-thumb-fallback', '🖼️');
+
+    if (path) {
+      const imEl = document.createElement('img');
+      imEl.alt = name;
+      imEl.loading = 'lazy';
+      imEl.addEventListener('load', () => {
+        fb.classList.add('hidden');
+      });
+      imEl.addEventListener('error', () => {
+        Logger.warn('Thumbnail failed: ' + name);
+        imEl.style.display = 'none';
+        fb.classList.remove('hidden');
+      });
+      imEl.src = '/api/thumbnail?path=' + encodeURIComponent(path);
+      thumb.appendChild(imEl);
+    }
+    thumb.appendChild(fb);
+
+    // Checkbox
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'img-cb';
+    cb.checked = isSel;
+    cb.addEventListener('click', e => {
+      e.stopPropagation();
+      this.cbToggle(g.id, i, cb.checked);
+    });
+    thumb.appendChild(cb);
+
+    if (isKeep) thumb.appendChild(this.el('span', 'keep-tag', 'KEEP'));
+    thumb.appendChild(this.el('div', 'ovl', '🔍'));
+
+    item.appendChild(thumb);
+
+    // Meta
+    const meta = this.el('div', 'img-meta');
+    const nm = this.el('div', 'img-name', name);
+    nm.title = path;
+    meta.appendChild(nm);
+
+    const detail = this.el('div', 'img-detail');
+    const parts = [];
+    if (img.megapixel > 0) parts.push(img.megapixel.toFixed(1) + 'MP');
+    if (img.width > 0) parts.push(img.width + '×' + img.height);
+    parts.push(this.fmtSz(img.size));
+    detail.innerHTML = this.esc(parts.join(' · ')) +
+      '<br>🕑 ' + this.esc(this.fmtDate(img.mod_time)) +
+      '<br>🏷️ ' + this.esc((img.format || '?').toUpperCase());
+    meta.appendChild(detail);
+    item.appendChild(meta);
+
+    // Actions
+    const acts = this.el('div', 'img-actions');
+    acts.appendChild(this.btn('👁',  () => this.openPreview(g.id, i),                                 'btn btn-ghost btn-xs'));
+    acts.appendChild(this.btn('🗑',  () => this.delOne(g.id, i),                                       'btn btn-danger btn-xs'));
+    acts.appendChild(this.btn('📂',  () => fetch('/api/open?path=' + encodeURIComponent(path)),        'btn btn-ghost btn-xs'));
+    item.appendChild(acts);
+
+    return item;
+  },
+
+  // ─── DOM helpers ───
+  el(tag, cls, txt) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (txt != null) e.textContent = txt;
+    return e;
+  },
+  btn(label, fn, cls) {
+    const b = document.createElement('button');
+    b.className = cls || 'qbtn';
+    b.textContent = label;
+    b.addEventListener('click', fn);
+    return b;
+  },
+
+  // ─── Selection ───
+  cbToggle(gid, idx, checked) {
+    const g = this.byId.get(gid);
+    if (!g) return;
+    const img = g.images[idx];
+    if (!img) return;
+    if (checked) this.selPaths.add(img.path);
+    else this.selPaths.delete(img.path);
+    this.refreshItem(gid, idx);
+    this.updateDelBtn();
+  },
+  refreshItem(gid, idx) {
+    const g = this.byId.get(gid);
+    if (!g) return;
+    const item = document.getElementById('ii-' + gid + '-' + idx);
+    if (!item) return;
+    const img = g.images[idx];
+    const isSel = this.selPaths.has(img.path);
+    const isKeep = idx === 0;
+    item.className = 'img-item' + (isSel ? ' sel' : isKeep ? ' keep' : '');
+  },
+  refreshGroupCBs(gid) {
+    const g = this.byId.get(gid);
+    if (!g) return;
+    const card = document.getElementById('gc' + gid);
+    if (!card) return;
+    card.querySelectorAll('.img-cb').forEach((cb, i) => {
+      const img = g.images[i];
+      if (img) {
+        cb.checked = this.selPaths.has(img.path);
+        this.refreshItem(gid, i);
+      }
+    });
+  },
+  updateDelBtn() {
+    const n = this.selPaths.size;
+    const btn = document.getElementById('delSelBtn');
+    btn.style.display = n > 0 ? '' : 'none';
+    btn.textContent = '🗑️ Delete (' + n + ')';
+  },
+
+  selGrp(gid, mode) {
+    const g = this.byId.get(gid);
+    if (!g) return;
+    if (mode === 'all') {
+      g.images.forEach(img => this.selPaths.add(img.path));
+    } else if (mode === 'none') {
+      g.images.forEach(img => this.selPaths.delete(img.path));
+    } else {
+      const sorted = g.images.slice();
+      if      (mode === 'dup_oldest')      sorted.sort((a,b) => new Date(a.mod_time) - new Date(b.mod_time));
+      else if (mode === 'dup_newest')      sorted.sort((a,b) => new Date(b.mod_time) - new Date(a.mod_time));
+      else if (mode === 'dup_largest')     sorted.sort((a,b) => b.size - a.size);
+      else if (mode === 'dup_smallest')    sorted.sort((a,b) => a.size - b.size);
+      else if (mode === 'dup_highest_res') sorted.sort((a,b) => (b.width*b.height) - (a.width*a.height));
+      const keep = sorted[0].path;
+      g.images.forEach(img => this.selPaths.delete(img.path));
+      sorted.slice(1).forEach(img => this.selPaths.add(img.path));
+      this.selPaths.delete(keep);
+    }
+    this.refreshGroupCBs(gid);
+    this.updateDelBtn();
+  },
+
+  quickSel(gid, mode) {
+    this.selGrp(gid, mode === 'highest_res' ? 'dup_highest_res' : 'dup_' + mode);
+  },
+
+  clearAllSel() {
+    this.selPaths.clear();
+    this.groups.forEach(g => this.refreshGroupCBs(g.id));
+    this.updateDelBtn();
+  },
+
+  // ─── Smart select ───
+  async smartAll(strategy) {
+    const prefDir = document.getElementById('prefDir').value.trim();
+    if (strategy === 'prefer_dir' && !prefDir) {
+      this.toast('Enter a folder path first', 'err');
+      return;
+    }
+    try {
+      const d = await fetch('/api/smart-select', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({strategy, prefer_dir: prefDir})
+      }).then(r => r.json());
+      this.selPaths.clear();
+      (d.to_delete || []).forEach(p => this.selPaths.add(p));
+      this.groups.forEach(g => this.refreshGroupCBs(g.id));
+      this.updateDelBtn();
+      this.toast('Selected ' + this.selPaths.size + ' duplicates', 'info');
+    } catch (e) {
+      Logger.error('Smart select failed', e);
+      this.toast('Error: ' + e.message, 'err');
+    }
+  },
+
+  // ─── Delete ───
+  isTrash() { return document.getElementById('trashChk').checked; },
+
+  async deleteSelected() {
+    const paths = Array.from(this.selPaths);
+    if (!paths.length) return;
+    const verb = this.isTrash() ? 'Move to Recycle Bin' : 'Permanently delete';
+    if (!confirm(verb + ' ' + paths.length + ' file(s)?')) return;
+    await this.doDelete(paths, this.isTrash());
+  },
+  async delOne(gid, idx) {
+    const g = this.byId.get(gid);
+    if (!g) return;
+    const img = g.images[idx];
+    if (!img) return;
+    const verb = this.isTrash() ? 'Recycle' : 'Delete';
+    if (!confirm(verb + ' "' + img.name + '"?')) return;
+    await this.doDelete([img.path], this.isTrash());
+  },
+  async delDupes(gid) {
+    const g = this.byId.get(gid);
+    if (!g) return;
+    const paths = g.images.slice(1).map(i => i.path);
+    if (!paths.length) return;
+    const verb = this.isTrash() ? 'Recycle' : 'Delete';
+    if (!confirm(verb + ' ' + paths.length + ' duplicate(s) (keep oldest)?')) return;
+    await this.doDelete(paths, this.isTrash());
+  },
+  async delPrev(side) {
+    const g = this.byId.get(this.modGid);
+    if (!g) return;
+    const idx = side === 'L' ? this.modIdxL : this.modIdxR;
+    const img = g.images[idx];
+    if (!img) return;
+    const verb = this.isTrash() ? 'Recycle' : 'Delete';
+    if (!confirm(verb + ' "' + img.name + '"?')) return;
+    await this.doDelete([img.path], this.isTrash());
+    this.closeModal();
+  },
+  async doDelete(paths, toTrash) {
+    try {
+      Logger.info('Deleting ' + paths.length + ' files (toTrash=' + toTrash + ')');
+      const d = await fetch('/api/delete', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({paths, to_trash: toTrash})
+      }).then(r => r.json());
+      const n = (d.deleted || []).length;
+      const f = Object.keys(d.failed || {}).length;
+      if (n) this.toast((toTrash ? 'Recycled' : 'Deleted') + ' ' + n + ' file' + (n>1?'s':''), 'ok');
+      if (f) {
+        this.toast(f + ' file' + (f>1?'s':'') + ' failed', 'err');
+        Logger.warn('Delete failures: ' + JSON.stringify(d.failed));
+      }
+      (d.deleted || []).forEach(p => this.selPaths.delete(p));
+      const r2 = await fetch('/api/results').then(r => r.json());
+      this.groups = r2.groups || [];
+      this.byId.clear();
+      this.groups.forEach(g => this.byId.set(g.id, g));
+      const prog = await fetch('/api/progress').then(r => r.json());
+      document.getElementById('stGr').textContent = (prog.groups||0).toLocaleString();
+      document.getElementById('stWa').textContent = (prog.wasted_mb||0).toFixed(1) + ' MB';
+      this.applyFilters();
+    } catch (e) {
+      Logger.error('Delete failed', e);
+      this.toast('Delete error: ' + e.message, 'err');
+    }
+  },
+
+  // ─── Modal ───
+  openPreview(gid, idx) {
+    const g = this.byId.get(gid);
+    if (!g || !g.images[idx]) return;
+    this.modGid = gid;
+    this.modIdxL = idx;
+    this.modCmp = false;
+    document.getElementById('mcR').style.display = 'none';
+    this.renderModal(g, idx);
+    document.getElementById('modal').classList.add('open');
+  },
+  renderModal(g, idx) {
+    this.modIdxL = idx;
+    document.getElementById('mTitle').textContent = g.images[idx].name;
+    document.getElementById('mGrpInfo').textContent = 'Group ' + (g.id + 1) + ' · ' + g.images.length + ' images';
+    this.setPanel('L', g.images[idx]);
+
+    const strip = document.getElementById('mStrip');
+    strip.innerHTML = '';
+    g.images.forEach((im, i) => {
+      const it = this.el('div', 'si' + (i === idx ? ' on' : ''));
+      const t = document.createElement('img');
+      t.src = '/api/thumbnail?path=' + encodeURIComponent(im.path);
+      t.alt = '';
+      t.loading = 'lazy';
+      it.appendChild(t);
+      const tx = this.el('div');
+      const nm = this.el('div', 'si-name', im.name);
+      nm.title = im.path;
+      tx.appendChild(nm);
+      tx.appendChild(this.el('div', 'si-sz',
+        this.fmtSz(im.size) + (im.width > 0 ? ' · ' + im.width + '×' + im.height : '')));
+      it.appendChild(tx);
+      it.addEventListener('click', () => this.stripClick(g.id, i));
+      strip.appendChild(it);
+    });
+  },
+  setPanel(side, img) {
+    const ext = (img.path || '').split('.').pop().toLowerCase();
+    const videoExts = ['mp4','mkv','avi','mov','wmv','flv','webm','m4v','mpg','mpeg','3gp','ogv','m2ts','mts','ts'];
+    const audioExts = ['mp3','m4a','wav','flac','ogg','aac','wma','opus','aiff','aif'];
+
+    const container = document.getElementById('mImg' + side).parentElement;
+    // Remove any prior dynamically-inserted media
+    container.querySelectorAll('.dyn-media').forEach(el => el.remove());
+
+    const imgEl = document.getElementById('mImg' + side);
+
+    if (videoExts.includes(ext)) {
+      imgEl.style.display = 'none';
+      imgEl.src = '';
+      const v = document.createElement('video');
+      v.className = 'dyn-media';
+      v.controls = true;
+      v.src = '/api/preview?path=' + encodeURIComponent(img.path);
+      v.style.maxWidth = '100%';
+      v.style.maxHeight = '100%';
+      container.insertBefore(v, imgEl);
+    } else if (audioExts.includes(ext)) {
+      imgEl.style.display = 'none';
+      imgEl.src = '';
+      const wrap = document.createElement('div');
+      wrap.className = 'dyn-media';
+      wrap.style.cssText = 'display:flex; flex-direction:column; align-items:center; gap:14px; padding:30px; color:var(--text-dim)';
+      wrap.innerHTML = '<div style="font-size:80px">🎵</div>';
+      const a = document.createElement('audio');
+      a.controls = true;
+      a.src = '/api/preview?path=' + encodeURIComponent(img.path);
+      a.style.width = '100%';
+      a.style.maxWidth = '500px';
+      wrap.appendChild(a);
+      const lbl = document.createElement('div');
+      lbl.style.cssText = 'font-size:13px; color:var(--text); font-weight:600';
+      lbl.textContent = img.name;
+      wrap.appendChild(lbl);
+      container.insertBefore(wrap, imgEl);
+    } else if (['pdf','doc','docx','txt','md','xls','xlsx','csv','ppt','pptx','zip','rar','7z','iso'].includes(ext)) {
+      imgEl.style.display = 'none';
+      imgEl.src = '';
+      const wrap = document.createElement('div');
+      wrap.className = 'dyn-media';
+      const ico = ['zip','rar','7z','iso','tar','gz'].includes(ext) ? '📦' : '📄';
+      wrap.style.cssText = 'display:flex; flex-direction:column; align-items:center; gap:14px; padding:40px; color:var(--text-dim); text-align:center';
+      wrap.innerHTML = '<div style="font-size:96px">' + ico + '</div>' +
+        '<div style="font-size:18px; font-weight:700; color:var(--text)">' + this.esc(img.name) + '</div>' +
+        '<div style="font-size:13px">' + ext.toUpperCase() + ' · ' + this.fmtSz(img.size) + '</div>' +
+        '<div style="font-size:11px; opacity:.7">No preview available for this file type</div>';
+      container.insertBefore(wrap, imgEl);
+    } else {
+      // Image — restore img element
+      imgEl.style.display = '';
+      imgEl.src = '/api/preview?path=' + encodeURIComponent(img.path);
+    }
+
+    const fn = document.getElementById('mFn' + side);
+    fn.textContent = img.name;
+    fn.title = img.path;
+    document.getElementById('mSz' + side).textContent = this.fmtSz(img.size);
+    document.getElementById('mDm' + side).textContent = img.width > 0 ? img.width + '×' + img.height : '—';
+    document.getElementById('mMp' + side).textContent = img.megapixel > 0 ? img.megapixel.toFixed(1) + 'MP' : '—';
+    document.getElementById('mFt' + side).textContent = (img.format || ext || '?').toUpperCase();
+    document.getElementById('mDt' + side).textContent = this.fmtDate(img.mod_time);
+    const md5el = document.getElementById('mMd' + side);
+    if (md5el) md5el.textContent = img.md5 ? 'MD5: ' + img.md5 : '';
+  },
+  stripClick(gid, idx) {
+    const g = this.byId.get(gid);
+    if (!g) return;
+    if (this.modCmp) {
+      this.modIdxR = idx;
+      this.setPanel('R', g.images[idx]);
+      this.refreshStripActive();
+    } else {
+      this.modIdxL = idx;
+      this.renderModal(g, idx);
+    }
+  },
+  refreshStripActive() {
+    document.querySelectorAll('#mStrip .si').forEach((el, i) => {
+      el.classList.toggle('on', i === this.modIdxL || i === this.modIdxR);
+    });
+  },
+  toggleCmp() {
+    this.modCmp = !this.modCmp;
+    document.getElementById('mcR').style.display = this.modCmp ? '' : 'none';
+    if (this.modCmp) {
+      const g = this.byId.get(this.modGid);
+      if (!g) return;
+      this.modIdxR = this.modIdxL === 0 ? Math.min(1, g.images.length - 1) : 0;
+      if (g.images[this.modIdxR]) this.setPanel('R', g.images[this.modIdxR]);
+      this.refreshStripActive();
+    }
+  },
+  mNav(dir) {
+    const g = this.byId.get(this.modGid);
+    if (!g) return;
+    this.modIdxL = (this.modIdxL + dir + g.images.length) % g.images.length;
+    this.renderModal(g, this.modIdxL);
+  },
+  closeModal() {
+    document.getElementById('modal').classList.remove('open');
+    document.getElementById('mImgL').src = '';
+    document.getElementById('mImgR').src = '';
+    // Stop any playing media
+    document.querySelectorAll('.dyn-media').forEach(el => el.remove());
+    this.modGid = null;
+    this.modCmp = false;
+  },
+  openFinder(side) {
+    const g = this.byId.get(this.modGid);
+    if (!g) return;
+    const idx = side === 'L' ? this.modIdxL : this.modIdxR;
+    const img = g.images[idx];
+    if (!img) return;
+    fetch('/api/open?path=' + encodeURIComponent(img.path));
+  },
+
+  exportCSV() { window.open('/api/export', '_blank'); },
+
+  // ─── Cache ───
+  async refreshCacheStats() {
+    try {
+      const s = await fetch('/api/cache/stats').then(r => r.json());
+      document.getElementById('caEnt').textContent = (s.entries||0).toLocaleString();
+      const total = (s.hits||0) + (s.misses||0);
+      if (total > 0) {
+        document.getElementById('caHit').textContent = Math.round(s.hit_rate||0) + '%';
+      } else {
+        document.getElementById('caHit').textContent = '—';
+      }
+    } catch(e) {
+      Logger.error('Cache stats failed', e);
+    }
+  },
+  async clearCache() {
+    if (!confirm('Clear hash cache? Next scan will re-compute everything.')) return;
+    try {
+      const d = await fetch('/api/cache/clear', {method:'POST'}).then(r => r.json());
+      this.toast('Cleared ' + (d.cleared||0) + ' cache entries', 'ok');
+      this.refreshCacheStats();
+    } catch(e) {
+      Logger.error('Cache clear failed', e);
+      this.toast('Clear failed: ' + e.message, 'err');
+    }
+  },
+
+  // ─── Session ───
+  async checkSession() {
+    try {
+      const s = await fetch('/api/session/exists').then(r => r.json());
+      const btn = document.getElementById('loadSessBtn');
+      const info = document.getElementById('sessInfo');
+      if (s.exists) {
+        btn.disabled = false;
+        const ts = s.timestamp ? new Date(s.timestamp).toLocaleString() : '?';
+        const sizeKB = ((s.bytes||0) / 1024).toFixed(1);
+        info.innerHTML = '<b style="color:var(--accent-l)">Last saved:</b> ' + this.esc(ts) +
+          '<br>' + (s.groups||0) + ' groups, ' + (s.selected||0) + ' selected · ' + sizeKB + ' KB';
+        // Offer to auto-restore on first launch only
+        if (!this.groups.length && !this._sessionPrompted) {
+          this._sessionPrompted = true;
+          setTimeout(() => {
+            if (!this.groups.length && confirm(
+              'Resume previous session?\n\n' +
+              'Saved on: ' + ts + '\n' +
+              s.groups + ' duplicate groups, ' + s.selected + ' files selected'
+            )) {
+              this.loadSession();
+            }
+          }, 600);
+        }
+      } else {
+        btn.disabled = true;
+        info.textContent = 'Save current scan results and selections to resume later.';
+      }
+    } catch(e) {
+      Logger.error('Session check failed', e);
+    }
+  },
+  async saveSession() {
+    if (!this.groups.length) {
+      this.toast('Run a scan first', 'err');
+      return;
+    }
+    const note = prompt('Optional note for this session (or leave blank):', '') || '';
+    try {
+      const d = await fetch('/api/session/save', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          selected: Array.from(this.selPaths),
+          note: note,
+        })
+      }).then(r => r.json());
+      this.toast('Session saved (' + ((d.bytes||0)/1024).toFixed(1) + ' KB)', 'ok');
+      this.checkSession();
+    } catch(e) {
+      Logger.error('Session save failed', e);
+      this.toast('Save failed: ' + e.message, 'err');
+    }
+  },
+  async loadSession() {
+    try {
+      const d = await fetch('/api/session/load').then(r => {
+        if (!r.ok) throw new Error('No session found');
+        return r.json();
+      });
+      this.groups = d.groups || [];
+      this.byId.clear();
+      this.groups.forEach(g => this.byId.set(g.id, g));
+      this.selPaths.clear();
+      (d.selected || []).forEach(p => this.selPaths.add(p));
+
+      // Apply saved settings to UI controls
+      if (d.settings) {
+        const s = d.settings;
+        if (s.dirs) document.getElementById('dirsIn').value = s.dirs.join('\n');
+        if (s.mode) document.getElementById('modeSel').value = s.mode;
+        if (s.threshold != null) {
+          document.getElementById('thrSlider').value = s.threshold;
+          document.getElementById('thrVal').textContent = s.threshold;
+        }
+        if (s.exclude_dirs) document.getElementById('excludeIn').value = (s.exclude_dirs||[]).join('\n');
+        if (s.threads != null) {
+          document.getElementById('threadsSlider').value = s.threads;
+          document.getElementById('threadsSlider').dispatchEvent(new Event('input'));
+        }
+        this.onModeChange();
+      }
+
+      // Compute stats
+      let scanned = 0, total_wasted = 0;
+      this.groups.forEach(g => {
+        scanned += g.images.length;
+        total_wasted += g.wasted_size;
+      });
+      document.getElementById('stSc').textContent = scanned.toLocaleString() + '+';
+      document.getElementById('stGr').textContent = this.groups.length.toLocaleString();
+      document.getElementById('stWa').textContent = (total_wasted/1024/1024).toFixed(1) + ' MB';
+
+      document.getElementById('expBtn').disabled = false;
+      document.getElementById('clrBtn').disabled = false;
+      document.getElementById('smart-bar').style.display = 'flex';
+      document.getElementById('action-bar').style.display = 'flex';
+      document.getElementById('searchIn').style.display = '';
+      document.getElementById('doneMsg').style.display = '';
+      const ts = d.timestamp ? new Date(d.timestamp).toLocaleString() : '?';
+      document.getElementById('doneMsg').textContent = 'Resumed session from ' + ts +
+        ' · ' + this.groups.length + ' groups';
+
+      this.applyFilters();
+      this.updateDelBtn();
+      this.toast('Session loaded', 'ok');
+      Logger.info('Session loaded: ' + this.groups.length + ' groups');
+    } catch(e) {
+      Logger.error('Session load failed', e);
+      this.toast('Load failed: ' + e.message, 'err');
+    }
+  },
+  async clearSession() {
+    if (!confirm('Delete saved session file?')) return;
+    try {
+      await fetch('/api/session/clear', {method:'POST'});
+      this.toast('Saved session deleted', 'info');
+      this.checkSession();
+    } catch(e) {
+      Logger.error('Session clear failed', e);
+    }
+  },
+
+  // ─── Helpers ───
+  fmtSz(b) {
+    if (b == null) return '?';
+    if (b < 1024) return b + 'B';
+    if (b < 1048576) return (b / 1024).toFixed(1) + 'KB';
+    if (b < 1073741824) return (b / 1048576).toFixed(1) + 'MB';
+    return (b / 1073741824).toFixed(2) + 'GB';
+  },
+  fmtDate(t) {
+    if (!t) return '?';
+    const d = new Date(t);
+    if (isNaN(d)) return '?';
+    return d.toLocaleDateString(undefined, {year:'numeric', month:'short', day:'numeric'});
+  },
+  esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  },
+  toast(msg, type) {
+    type = type || 'info';
+    const div = document.createElement('div');
+    div.className = 'toast ' + type;
+    const ico = {ok:'✅', err:'❌', info:'ℹ️'}[type] || 'ℹ️';
+    div.innerHTML = '<span>' + ico + '</span><span>' + this.esc(msg) + '</span>';
+    document.getElementById('toaster').appendChild(div);
+    setTimeout(() => {
+      div.style.animation = 'fadeOut .3s ease forwards';
+      setTimeout(() => div.remove(), 300);
+    }, 3500);
+  }
+};
+
+// Boot
+// ═══════════════════════════════════════════════════════════════════
+// Live Logs Modal
+// ═══════════════════════════════════════════════════════════════════
+const LogsUI = {
+  pollTimer: null,
+  rawLines: [],
+  pollInterval: 1500,
+
+  open() {
+    const m = document.getElementById('logs-modal');
+    m.classList.add('open');
+    this.refresh(true);
+    this.pollTimer = setInterval(() => this.refresh(false), this.pollInterval);
+    document.getElementById('lStatus').textContent = 'Polling every ' + (this.pollInterval/1000) + 's';
+    Logger.debug('Live logs opened');
+  },
+
+  close() {
+    document.getElementById('logs-modal').classList.remove('open');
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
+  },
+
+  async refresh(forceFull) {
+    try {
+      const text = await fetch('/api/logs', {cache:'no-store'}).then(r => r.text());
+      const lines = text.split('\n').filter(Boolean);
+      // Skip rendering if no change
+      if (!forceFull && lines.length === this.rawLines.length &&
+          lines.length > 0 && lines[lines.length-1] === this.rawLines[this.rawLines.length-1]) {
+        return;
+      }
+      this.rawLines = lines;
+      this.render();
+    } catch (e) {
+      const status = document.getElementById('lStatus');
+      if (status) status.textContent = 'Polling error: ' + e.message;
+    }
+  },
+
+  render() {
+    const filterLevel = document.getElementById('lLevelFilter').value;
+    const search = (document.getElementById('lSearch').value || '').toLowerCase();
+    const follow = document.getElementById('lFollow').checked;
+    const body = document.getElementById('lBody');
+
+    const levelOrder = {fatal:5, error:4, warn:3, info:2, debug:1};
+    const minLevel = filterLevel === 'all' ? 0 : (levelOrder[filterLevel] || 0);
+
+    // Build display list
+    const html = [];
+    let displayed = 0;
+    for (const ln of this.rawLines) {
+      // Detect level from the log format: "TIME [LEVEL] message"
+      const m = ln.match(/\[([A-Z][A-Z\-]*)\]/);
+      const lvlRaw = m ? m[1].toLowerCase() : 'info';
+      const isClient = lvlRaw.startsWith('client');
+      const lvlBase = isClient ? lvlRaw.replace('client-','') : lvlRaw;
+
+      // Level filter
+      if (filterLevel === 'client') {
+        if (!isClient) continue;
+      } else if (filterLevel !== 'all') {
+        const lo = levelOrder[lvlBase] || 0;
+        if (lo < minLevel) continue;
+      }
+      // Text filter
+      if (search && !ln.toLowerCase().includes(search)) continue;
+
+      let cls = 'log-line ' + lvlBase;
+      if (isClient) cls += ' client';
+      if (isClient && lvlBase === 'error') cls = 'log-line client-error';
+      html.push('<div class="' + cls + '">' + this.esc(ln) + '</div>');
+      displayed++;
+    }
+
+    // Performance: cap displayed to last 2000 lines
+    if (html.length > 2000) {
+      html.splice(0, html.length - 2000);
+    }
+
+    body.innerHTML = html.join('') ||
+      '<div style="padding:30px; text-align:center; color:var(--muted)">No matching log lines</div>';
+
+    document.getElementById('lLineCount').textContent =
+      displayed + ' / ' + this.rawLines.length + ' lines';
+
+    if (follow) {
+      body.scrollTop = body.scrollHeight;
+    }
+  },
+
+  async copyToClipboard() {
+    try {
+      const text = await fetch('/api/logs').then(r => r.text());
+      await navigator.clipboard.writeText(text);
+      App.toast('Copied ' + text.split('\n').length + ' log lines', 'ok');
+    } catch (e) {
+      App.toast('Copy failed: ' + e.message, 'err');
+    }
+  },
+
+  esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+};
+
+// Allow Esc to close logs modal too
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('logs-modal').classList.contains('open')) {
+    LogsUI.close();
+  }
+});
+document.getElementById('logs-modal').addEventListener('click', e => {
+  if (e.target.id === 'logs-modal') LogsUI.close();
+});
+
+document.addEventListener('DOMContentLoaded', () => App.init());
+</script>
+</body>
+</html>
