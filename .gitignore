@@ -1,0 +1,20 @@
+# Runtime data (machine-specific / auto-created)
+cache.json
+session.json
+dupcleaner.log
+tools.json
+rules.json
+*.exe~
+
+# Thumbnail cache
+thumbs/
+
+# Auto-downloaded external tools (ffmpeg/ffprobe/fpcalc)
+tools/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+docs/

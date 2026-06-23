@@ -1,0 +1,22 @@
+services:
+  dupcleaner:
+    build: .
+    image: dupcleaner:latest
+    ports:
+      # host:container — open http://localhost:7891 once running.
+      - "7891:7891"
+    environment:
+      # Bind all interfaces so the UI is reachable from the host.
+      - DUPCLEANER_HOST=0.0.0.0
+    volumes:
+      # Persistent app state (cache.json, session.json, thumbs/, etc.).
+      # Wipe it with: docker compose down -v   (or: docker volume rm dupcleaner-data)
+      - dupcleaner-data:/data
+      # EXAMPLE media mount — EDIT the left side to a real host path, then scan
+      # /media/photos from inside the app. `:ro` keeps it read-only for safety.
+      # Add more lines for additional folders.
+      - /path/to/your/media:/media/photos:ro
+    restart: unless-stopped
+
+volumes:
+  dupcleaner-data:

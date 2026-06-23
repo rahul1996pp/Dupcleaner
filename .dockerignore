@@ -1,0 +1,28 @@
+# Version control
+.git
+.gitignore
+
+# Prebuilt Windows binaries (the image builds its own Linux binary)
+*.exe
+
+# Runtime data written by the app (must not leak into the build context)
+cache.json
+session.json
+tools.json
+rules.json
+dupcleaner.log
+thumbs/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+
+# Docker files themselves (not needed inside the build context)
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# NOTE: index.html is intentionally NOT ignored — it is required at build time
+# for //go:embed. go.mod/go.sum and *_test.go are likewise kept so the module
+# graph and build stay intact.
