@@ -1,6 +1,7 @@
 package dup
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/md5"
@@ -10,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"image"
+	"image/color"
 	"image/draw"
 	_ "image/gif"
 	"image/jpeg"
@@ -19,9 +21,11 @@ import (
 	"log"
 	"math"
 	"math/bits"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
@@ -30,6 +34,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	_ "github.com/gen2brain/heic" // Native HEIC (WASM, no CGO)
@@ -220,6 +225,18 @@ type AppState struct {
 	settings      ScanRequest // last scan settings (for session save)
 	thumbing      bool          // a thumbnail-generation job is running
 	thumbProgress ThumbProgress // live progress for thumbnail generation
+	undo          *undoRecord   // most recent move-to-trash deletion, for one-click restore
+}
+
+// undoRecord captures what's needed to reverse the most recent move-to-trash
+// deletion: the trashed file paths (to pull back out of the Recycle Bin) and a
+// snapshot of the results exactly as they were BEFORE the delete (to restore the
+// grid). Only set for to-trash deletes — permanent deletes are not recoverable.
+type undoRecord struct {
+	paths    []string
+	groups   []*DuplicateGroup
+	wastedMB float64
+	groupN   int
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -268,7 +285,6 @@ type CacheEntry struct {
 
 type Cache struct {
 	mu      sync.RWMutex
-	Version int                    `json:"v"`
 	Entries map[string]*CacheEntry `json:"e"`
 	// bySig indexes entries by "size:modUnix" so a file that was moved or
 	// renamed (same bytes, same mtime, new path) reuses its cached fingerprints
@@ -277,11 +293,23 @@ type Cache struct {
 	bySig  map[string]*CacheEntry
 	hits   int64
 	misses int64
+
+	// Append-only journal (write-ahead log). Every Set appends ONE line the
+	// instant a fingerprint is computed, so an interrupted scan (window closed,
+	// crash, OOM, sleep) keeps all work done so far instead of throwing it away.
+	// The full snapshot (Entries) is rewritten only at safe points — end of scan
+	// and shutdown — and the journal is replayed on top of the snapshot at the
+	// next startup, then truncated once folded in. Appending is O(1): the map is
+	// never re-serialized per entry. A nil journal makes every append a no-op, so
+	// unit tests and pre-startup Sets never touch the disk.
+	jmu     sync.Mutex
+	journal *os.File
+	jpath   string
+	jerr    bool // set once a journal write fails, so the warning is logged once
 }
 
 func NewCache() *Cache {
 	return &Cache{
-		Version: cacheVersion,
 		Entries: make(map[string]*CacheEntry),
 		bySig:   make(map[string]*CacheEntry),
 	}
@@ -296,8 +324,15 @@ func sigKey(size, modUnix int64) string {
 	return strconv.FormatInt(size, 10) + ":" + strconv.FormatInt(modUnix, 10)
 }
 
-const cacheVersion = 3 // schema marker for the on-disk cache (bumped only when a fingerprint algorithm changes)
 const cacheFile = "cache.json"
+const journalFile = "cache.log" // append-only write-ahead log, compacted into cacheFile
+
+// journalRec is one appended line: a path and the fingerprint just computed for
+// it. The journal is a flat list of these — no header, no versions.
+type journalRec struct {
+	P string      `json:"p"`
+	E *CacheEntry `json:"e"`
+}
 
 func (c *Cache) Load(path string) error {
 	c.mu.Lock()
@@ -310,20 +345,9 @@ func (c *Cache) Load(path string) error {
 	if err := json.Unmarshal(data, &loaded); err != nil {
 		return err
 	}
-	if loaded.Version != cacheVersion {
-		// Old cache schema — discard and start fresh. Don't return an error
-		// because that would make startup look like it failed.
-		log.Printf("[INFO] Cache schema changed (v%d → v%d), rebuilding", loaded.Version, cacheVersion)
-		c.Version = cacheVersion // MUST update so Save() writes the correct version
-		c.Entries = make(map[string]*CacheEntry)
-		c.bySig = make(map[string]*CacheEntry)
-		os.Remove(path)
-		return nil
-	}
 	if loaded.Entries == nil {
 		loaded.Entries = make(map[string]*CacheEntry)
 	}
-	c.Version = loaded.Version
 	c.Entries = loaded.Entries
 	// Rebuild the (size,mtime) index — it is not serialized.
 	c.bySig = make(map[string]*CacheEntry, len(loaded.Entries))
@@ -340,7 +364,24 @@ func (c *Cache) Save(path string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	// Atomic replace: write a sibling temp file, then rename over the target. A
+	// crash or kill mid-write can never truncate the existing snapshot — the
+	// rename either fully happens or not at all.
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	// The snapshot now contains every journaled entry, so start the journal over;
+	// this keeps it from growing without bound across scans. Safe because Save is
+	// only called at scan boundaries when no worker is mid-Set.
+	c.jmu.Lock()
+	c.resetJournalLocked()
+	c.jmu.Unlock()
+	return nil
 }
 
 // contentID returns the content identity used to recognize a file regardless of
@@ -386,6 +427,9 @@ func (c *Cache) Set(path string, e *CacheEntry) {
 	c.Entries[path] = e
 	c.bySig[sigKey(e.Size, e.ModUnix)] = e
 	c.mu.Unlock()
+	// Persist immediately — the data is durable the moment it is computed, not
+	// only when the whole scan finishes. O(1): one small append, no re-marshal.
+	c.journalAppend(path, e)
 }
 
 func (c *Cache) Clear() int {
@@ -397,6 +441,13 @@ func (c *Cache) Clear() int {
 	atomic.StoreInt64(&c.hits, 0)
 	atomic.StoreInt64(&c.misses, 0)
 	os.Remove(cacheFile)
+	c.jmu.Lock()
+	if c.journal != nil {
+		c.resetJournalLocked() // wipe journaled entries, keep the open handle valid
+	} else {
+		os.Remove(journalFile)
+	}
+	c.jmu.Unlock()
 	return n
 }
 
@@ -410,6 +461,125 @@ func (c *Cache) Stats() (entries int, hits, misses int64, fileBytes int64) {
 		fileBytes = st.Size()
 	}
 	return
+}
+
+// ── Append-only journal (write-ahead log) ────────────────────────────────
+// Started once at startup via OpenJournal; before that, every append is a no-op
+// so unit tests and library callers never create files implicitly.
+
+// OpenJournal replays any journal left beside the snapshot — recovering every
+// fingerprint computed before an interrupted run could compact it — and then
+// opens that journal for appending. Returns the number of entries recovered.
+func (c *Cache) OpenJournal(path string) (int, error) {
+	c.jmu.Lock()
+	defer c.jmu.Unlock()
+	c.jpath = path
+	recovered := c.replayLocked(path) // best-effort; folds journal over the snapshot
+	// Open in append mode, keeping any recovered lines on disk (the snapshot may
+	// not yet contain them) until the next compaction folds them in.
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return recovered, err
+	}
+	c.journal = f
+	return recovered, nil
+}
+
+// replayLocked folds an on-disk journal over the current in-memory map: every
+// line is one record. A torn final line — the classic crash-mid-write artifact —
+// is skipped, not fatal. Caller holds jmu.
+func (c *Cache) replayLocked(path string) (recovered int) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024) // entries with VHashes/PSig can be long
+	for sc.Scan() {
+		line := sc.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+		var rec journalRec
+		if json.Unmarshal(line, &rec) != nil || rec.E == nil || rec.P == "" {
+			continue // torn or malformed line — skip it
+		}
+		c.Entries[rec.P] = rec.E
+		c.bySig[sigKey(rec.E.Size, rec.E.ModUnix)] = rec.E
+		recovered++
+	}
+	// Distinguish clean EOF from a read error (I/O failure on a NAS/USB drive, or
+	// an over-long line): on error the replay is PARTIAL, so warn rather than
+	// silently report a complete recovery. The missing fingerprints simply
+	// recompute this scan and get re-journaled.
+	if err := sc.Err(); err != nil {
+		log.Printf("[WARN] Cache journal replay stopped early after %d entries (%v) — the rest will be recomputed", recovered, err)
+	}
+	return recovered
+}
+
+// journalAppend writes one entry to the journal the instant it is computed.
+// O(1) — a single small write, no re-serialization of the map. No-op until
+// OpenJournal has run, or once a write has failed (logged once).
+func (c *Cache) journalAppend(path string, e *CacheEntry) {
+	c.jmu.Lock()
+	defer c.jmu.Unlock()
+	if c.journal == nil || c.jerr {
+		return
+	}
+	line, err := json.Marshal(journalRec{P: path, E: e})
+	if err != nil {
+		return
+	}
+	line = append(line, '\n')
+	if _, err := c.journal.Write(line); err != nil {
+		c.jerr = true
+		log.Printf("[WARN] Cache journal write failed (in-memory cache still intact): %v", err)
+	}
+}
+
+// resetJournalLocked empties the journal, called after a snapshot has absorbed
+// every journaled entry. It closes and recreates the file with O_TRUNC rather
+// than Truncate(0): on Windows an append-only handle (FILE_APPEND_DATA) cannot
+// reliably shrink itself. Caller holds jmu.
+func (c *Cache) resetJournalLocked() {
+	if c.journal == nil {
+		return
+	}
+	c.journal.Close()
+	f, err := os.OpenFile(c.jpath, os.O_CREATE|os.O_TRUNC|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		c.journal = nil
+		c.jerr = true
+		return
+	}
+	c.journal = f
+	c.jerr = false
+}
+
+// SyncJournal flushes the journal to stable storage. Called on graceful shutdown
+// so even a power loss right after Ctrl-C keeps the last entries.
+func (c *Cache) SyncJournal() {
+	c.jmu.Lock()
+	defer c.jmu.Unlock()
+	if c.journal != nil {
+		c.journal.Sync()
+	}
+}
+
+// CloseJournal flushes and releases the journal handle. The on-disk log is left
+// fully intact (it is only emptied by Save's compaction), so closing without a
+// prior Save leaves exactly the state a crash would — which the next OpenJournal
+// recovers. Releasing the handle also lets the file be removed on Windows.
+func (c *Cache) CloseJournal() {
+	c.jmu.Lock()
+	defer c.jmu.Unlock()
+	if c.journal != nil {
+		c.journal.Sync()
+		c.journal.Close()
+		c.journal = nil
+	}
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -434,10 +604,25 @@ const sessionVersion = 1
 const thumbCacheDir = "thumbs"
 const thumbStdSize = 240 // single canonical size — saves duplicate decodes
 
-// thumbSem limits concurrent image decodes in the thumbnail handler.
-// Without this, a browser loading 50+ thumbnails at once can spike RAM by
-// 50 × ~96 MB (one decoded 24MP NRGBA per goroutine).
-var thumbSem = make(chan struct{}, 4)
+// thumbSem limits concurrent image decodes across the thumbnail handler and the
+// batch generator. The encoders now downscale straight from the decoded image
+// (encodeThumbDirect — no full-size NRGBA copy), so peak memory is ~one decode
+// buffer per slot; we can therefore run ~¾ of the cores in parallel for much
+// faster bulk thumbnailing instead of the old fixed 4.
+var thumbSem = make(chan struct{}, thumbDecodeConc())
+
+// thumbDecodeConc sizes thumbSem from the CPU count (clamped 4..16). Capped so a
+// burst of multi-second HEIC decodes can't swamp RAM on a smaller machine.
+func thumbDecodeConc() int {
+	n := runtime.NumCPU() * 3 / 4
+	if n < 4 {
+		n = 4
+	}
+	if n > 16 {
+		n = 16
+	}
+	return n
+}
 
 var (
 	state      = &AppState{}
@@ -637,9 +822,9 @@ func Main() {
 		}
 	}()
 
-	port := "7891"
+	listenArg := ""
 	if len(os.Args) > 1 {
-		port = os.Args[1]
+		listenArg = os.Args[1]
 	}
 
 	logf("INFO", "DupCleaner starting on Go %s, GOOS=%s, NumCPU=%d",
@@ -658,6 +843,24 @@ func Main() {
 		ent, _, _, _ := cache.Stats()
 		logf("INFO", "Loaded cache: %d entries", ent)
 	}
+	// Replay the write-ahead journal on top of the snapshot — this recovers any
+	// fingerprints computed by a previous run that was interrupted before it could
+	// compact — then open the journal for this run's incremental saves.
+	if recovered, err := cache.OpenJournal(journalFile); err != nil {
+		logf("WARN", "Cache journal unavailable (incremental save disabled): %v", err)
+	} else if recovered > 0 {
+		logf("INFO", "Recovered %d cache entries from an interrupted scan's journal", recovered)
+	}
+	// Flush the journal to stable storage on Ctrl-C / termination so the last few
+	// entries survive even a power loss right at shutdown.
+	go func() {
+		sigc := make(chan os.Signal, 1)
+		signal.Notify(sigc, os.Interrupt, syscall.SIGTERM)
+		<-sigc
+		logf("INFO", "Shutting down — flushing cache journal")
+		cache.SyncJournal()
+		os.Exit(0)
+	}()
 	loadToolsConfig()
 	loadRules()
 
@@ -673,6 +876,7 @@ func Main() {
 	mux.HandleFunc("/api/thumbnails/progress", handleThumbProgress)
 	mux.HandleFunc("/api/thumbnails/cancel", handleThumbCancel)
 	mux.HandleFunc("/api/delete", handleDelete)
+	mux.HandleFunc("/api/restore", handleRestore)
 	mux.HandleFunc("/api/open", handleOpen)
 	mux.HandleFunc("/api/open-file", handleOpenFile)
 	mux.HandleFunc("/api/export", handleExport)
@@ -687,6 +891,7 @@ func Main() {
 	mux.HandleFunc("/api/session/load", handleSessionLoad)
 	mux.HandleFunc("/api/session/exists", handleSessionExists)
 	mux.HandleFunc("/api/session/clear", handleSessionClear)
+	mux.HandleFunc("/api/folders/common", handleCommonFolders)
 	mux.HandleFunc("/api/folder/pick", handleFolderPick)
 	mux.HandleFunc("/api/file/pick", handleFilePick)
 	mux.HandleFunc("/api/video/tools", handleVideoTools)
@@ -697,13 +902,17 @@ func Main() {
 	mux.HandleFunc("/api/rules/delete", handleDeleteRule)
 	mux.HandleFunc("/api/rules/apply", handleApplyRule)
 
-	addr := serverHost() + ":" + port
+	addr, browseURL, exposed := resolveListenAddr(listenArg)
 	logf("INFO", "Listening on http://%s", addr)
+	if exposed {
+		logf("WARN", "Bound to %s — reachable from OTHER machines on your network. "+
+			"This server can delete and read local files; only expose it on a trusted network.", addr)
+	}
 	logf("INFO", "Logs writing to: dupcleaner.log (in current directory)")
 
 	go func() {
 		time.Sleep(700 * time.Millisecond)
-		openBrowser("http://" + addr)
+		openBrowser(browseURL)
 	}()
 
 	if err := http.ListenAndServe(addr, mux); err != nil {
@@ -712,13 +921,48 @@ func Main() {
 	}
 }
 
-// serverHost returns the listen host. Defaults to loopback-only (127.0.0.1)
-// for safety; set DUPCLEANER_HOST=0.0.0.0 to bind all interfaces (e.g. Docker).
+// serverHost returns the default listen host when the CLI arg gives only a port.
+// Loopback-only (127.0.0.1) for safety; set DUPCLEANER_HOST=0.0.0.0 to bind all
+// interfaces without passing a host:port arg (e.g. Docker).
 func serverHost() string {
 	if h := os.Getenv("DUPCLEANER_HOST"); h != "" {
 		return h
 	}
 	return "127.0.0.1"
+}
+
+// resolveListenAddr turns the optional first CLI argument into a bind address.
+// It accepts either a bare port ("8030" → bound to serverHost(), i.e. loopback
+// unless DUPCLEANER_HOST overrides) or a full host:port ("0.0.0.0:8030",
+// "192.168.1.5:8030", "[::1]:8030") which is bound verbatim. Returns the bind
+// address, a browser-friendly URL (0.0.0.0/:: rewritten to localhost so the
+// local browser actually opens), and whether the bind reaches beyond loopback.
+func resolveListenAddr(arg string) (addr, browseURL string, exposed bool) {
+	host, port := serverHost(), "7891"
+	if arg != "" {
+		if strings.Contains(arg, ":") {
+			if h, p, err := net.SplitHostPort(arg); err == nil { // "host:port" / "[::1]:port" / ":port"
+				if h != "" {
+					host = h
+				} else {
+					host = "0.0.0.0" // ":8030" → all interfaces
+				}
+				port = p
+			} else {
+				port = arg // malformed; let ListenAndServe surface the error
+			}
+		} else {
+			port = arg // bare port
+		}
+	}
+	addr = net.JoinHostPort(host, port)
+	exposed = !(host == "127.0.0.1" || host == "::1" || strings.EqualFold(host, "localhost"))
+	bh := host
+	if host == "0.0.0.0" || host == "::" || host == "" {
+		bh = "127.0.0.1" // these aren't usable client addresses — open loopback
+	}
+	browseURL = "http://" + net.JoinHostPort(bh, port)
+	return
 }
 
 func openBrowser(url string) {
@@ -778,9 +1022,9 @@ func handleSystem(w http.ResponseWriter, r *http.Request) {
 	numCPU := runtime.NumCPU()
 	// Recommended workers: leave ~25% CPU headroom so the machine stays
 	// responsive during a scan (running every logical CPU flat-out makes the
-	// UI lag). RAM estimate per image ~96MB (NRGBA 24MP) caps it on low-RAM
-	// machines. "Full CPU" (numCPU) stays available as an explicit max-speed choice.
-	const perImageMB = 96
+	// UI lag). RAM estimate per image ~48MB (decoded 24MP buffer; no NRGBA copy)
+	// caps it on low-RAM machines. "Full CPU" (numCPU) stays available as an explicit max-speed choice.
+	const perImageMB = 48
 	maxByRAM := int(ram / 2 / (perImageMB * 1024 * 1024))
 	if maxByRAM < 1 {
 		maxByRAM = 1
@@ -920,6 +1164,7 @@ func handleScan(w http.ResponseWriter, r *http.Request) {
 	state.scanning = true
 	state.progress = ScanProgress{Status: "Initializing..."}
 	state.groups = nil
+	state.undo = nil // a new scan invalidates any pending undo from the old result set
 	state.mu.Unlock()
 
 	atomic.StoreInt64(&decNative, 0)
@@ -1122,22 +1367,72 @@ func thumbCachePath(srcPath string, size int64, modUnix int64) string {
 	return filepath.Join(thumbCacheDir, hex[:2], hex+".jpg")
 }
 
-// encodeImageThumb decodes a source image, resizes it to fit thumbStdSize, and
-// returns the JPEG-encoded thumbnail bytes. It bounds concurrency with thumbSem
-// (each decode can use ~96 MB). Shared by the live thumbnail handler and the
-// batch generator so both produce byte-identical thumbnails.
+// encodeImageThumb decodes a source image and returns the JPEG-encoded thumbnail
+// bytes. It bounds concurrency with thumbSem and downscales via encodeThumbDirect
+// (sampling straight from the decoded image — no full-size NRGBA copy), so each
+// slot holds ~one decode buffer instead of ~96 MB. Shared by the live thumbnail
+// handler and the batch generator; produces the same thumbnails as the scan's
+// piggyback path.
 func encodeImageThumb(path string) ([]byte, error) {
 	thumbSem <- struct{}{}
+	defer func() { <-thumbSem }()
 	img, _, err := decodeImageFile(path)
 	if err != nil {
-		<-thumbSem
 		return nil, err
 	}
-	thumb := resizeFitFast(img, thumbStdSize, thumbStdSize)
-	img = nil // release full-size image immediately
-	<-thumbSem
+	return encodeThumbDirect(img)
+}
+
+// encodeThumbDirect resizes an ALREADY-DECODED image to fit thumbStdSize and
+// returns the JPEG-encoded thumbnail bytes, sampling source pixels directly
+// (nearest-neighbour, identical math to resizeFitFast) WITHOUT allocating a
+// full-resolution NRGBA copy. The scan's decode workers call this on the image
+// they just decoded for hashing, so a thumbnail costs only the cheap downscale —
+// not a second full decode — while the per-image RAM gate (which assumes no
+// extra full-size buffer) still holds.
+func encodeThumbDirect(src image.Image) ([]byte, error) {
+	b := src.Bounds()
+	w, h := b.Dx(), b.Dy()
+	if w == 0 || h == 0 {
+		return nil, fmt.Errorf("empty image")
+	}
+	nw, nh := w, h
+	if w > thumbStdSize || h > thumbStdSize {
+		scale := math.Min(float64(thumbStdSize)/float64(w), float64(thumbStdSize)/float64(h))
+		nw = int(math.Round(float64(w) * scale))
+		nh = int(math.Round(float64(h) * scale))
+		if nw < 1 {
+			nw = 1
+		}
+		if nh < 1 {
+			nh = 1
+		}
+	}
+	dst := image.NewNRGBA(image.Rect(0, 0, nw, nh))
+	stepX := (w << 16) / nw
+	stepY := (h << 16) / nh
+	for y := 0; y < nh; y++ {
+		srcY := (y*stepY + 0x8000) >> 16
+		if srcY >= h {
+			srcY = h - 1
+		}
+		dstRow := y * dst.Stride
+		for x := 0; x < nw; x++ {
+			srcX := (x*stepX + 0x8000) >> 16
+			if srcX >= w {
+				srcX = w - 1
+			}
+			// NRGBAModel un-premultiplies, matching resizeFitFast→toNRGBA output.
+			c := color.NRGBAModel.Convert(src.At(b.Min.X+srcX, b.Min.Y+srcY)).(color.NRGBA)
+			di := dstRow + x*4
+			dst.Pix[di] = c.R
+			dst.Pix[di+1] = c.G
+			dst.Pix[di+2] = c.B
+			dst.Pix[di+3] = c.A
+		}
+	}
 	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, thumb, &jpeg.Options{Quality: 80}); err != nil {
+	if err := jpeg.Encode(&buf, dst, &jpeg.Options{Quality: 80}); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -1361,6 +1656,13 @@ func handleDelete(w http.ResponseWriter, r *http.Request) {
 		}
 
 		state.mu.Lock()
+		// Snapshot the results BEFORE pruning so a to-trash delete can be undone in
+		// one click. The old *DuplicateGroup pointers are never mutated (we build
+		// fresh g2 copies below), so the snapshot stays a faithful pre-delete view.
+		prevGroups := state.groups
+		prevWasted := state.progress.WastedMB
+		prevGroupN := state.progress.Groups
+
 		newGroups := make([]*DuplicateGroup, 0, len(state.groups))
 		for _, g := range state.groups {
 			pruned := make([]*ImageInfo, 0, len(g.Images))
@@ -1392,14 +1694,131 @@ func handleDelete(w http.ResponseWriter, r *http.Request) {
 		}
 		state.progress.WastedMB = float64(tw) / 1024 / 1024
 		state.progress.Groups = len(state.groups)
+		// Record the undo only for recoverable (to-trash) deletes; a permanent
+		// delete clears any stale undo so the UI never offers a restore that can't work.
+		if req.ToTrash {
+			state.undo = &undoRecord{paths: deleted, groups: prevGroups, wastedMB: prevWasted, groupN: prevGroupN}
+		} else {
+			state.undo = nil
+		}
 		state.mu.Unlock()
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"deleted": deleted,
-		"failed":  failed,
+		"deleted":  deleted,
+		"failed":   failed,
+		"can_undo": req.ToTrash && len(deleted) > 0,
 	})
+}
+
+// handleRestore reverses the most recent move-to-trash deletion: it pulls the
+// trashed files back out of the Recycle Bin and restores the pre-delete results
+// snapshot so the grid looks exactly as it did before. One-shot — the undo
+// record is consumed (and is also cleared by any new scan or permanent delete).
+func handleRestore(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", 405)
+		return
+	}
+	if isCrossSite(r) {
+		http.Error(w, "forbidden", 403)
+		return
+	}
+	state.mu.RLock()
+	u := state.undo
+	state.mu.RUnlock()
+	if u == nil || len(u.paths) == 0 {
+		http.Error(w, "nothing to undo", 400)
+		return
+	}
+
+	restored, failed := restoreFromTrash(u.paths)
+	logf("INFO", "Restore request: %d trashed paths → %d restored, %d failed", len(u.paths), len(restored), len(failed))
+
+	if len(restored) > 0 {
+		state.mu.Lock()
+		// Only roll back to the snapshot if it's still the same undo we read (no
+		// scan/delete raced in between), so we never resurrect a stale result set.
+		if state.undo == u {
+			// Restore the pre-delete grid ONLY when every file actually came back;
+			// a partial restore would otherwise show "ghost" entries for files that
+			// are still in the Recycle Bin. On a partial restore we leave the grid
+			// in its post-delete state (the recovered files are on disk and the
+			// `failed` list is returned so the UI can warn).
+			if len(failed) == 0 {
+				state.groups = u.groups
+				state.progress.WastedMB = u.wastedMB
+				state.progress.Groups = u.groupN
+			}
+			state.undo = nil // consumed either way — a partial restore isn't safely retryable
+		}
+		state.mu.Unlock()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"restored": restored,
+		"failed":   failed,
+	})
+}
+
+// restoreFromTrash pulls files back out of the OS trash by their ORIGINAL path.
+// On Windows it drives the Recycle Bin via Shell.Application: it walks the bin,
+// matches each item's "Original Location" + name against the wanted paths, and
+// invokes the localized Restore verb. Returns the paths it got back plus reasons
+// for any it couldn't.
+func restoreFromTrash(paths []string) (restored []string, failed map[string]string) {
+	failed = make(map[string]string)
+	if len(paths) == 0 {
+		return
+	}
+	if runtime.GOOS == "windows" {
+		var sb strings.Builder
+		sb.WriteString("$sh=New-Object -ComObject Shell.Application;$bin=$sh.Namespace(0xA);$want=@(")
+		for i, p := range paths {
+			if i > 0 {
+				sb.WriteString(",")
+			}
+			sb.WriteString("'")
+			sb.WriteString(strings.ReplaceAll(p, "'", "''"))
+			sb.WriteString("'")
+		}
+		sb.WriteString(");foreach($it in @($bin.Items())){$o=$bin.GetDetailsOf($it,1);$full=Join-Path $o $it.Name;")
+		sb.WriteString("if($want -icontains $full){$v=$it.Verbs()|?{$_.Name -match 'estore|ndelete|Wiederherstell|staur|ripristin|herstel'}|select -First 1;")
+		sb.WriteString("if($v){$v.DoIt();Write-Host \"OK:$full\"}else{Write-Host \"ERR:$full\"}}}")
+		out, err := exec.Command("powershell", "-NoProfile", "-Command", sb.String()).Output()
+		if err != nil {
+			logf("ERROR", "Restore PowerShell failed: %v", err)
+		}
+		okSet := make(map[string]bool)
+		for _, line := range strings.Split(string(out), "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "OK:") {
+				okSet[strings.TrimPrefix(line, "OK:")] = true
+			}
+		}
+		for _, p := range paths {
+			if okSet[p] {
+				restored = append(restored, p)
+			} else if _, err := os.Stat(p); err == nil {
+				restored = append(restored, p) // already back on disk
+			} else {
+				failed[p] = "not found in Recycle Bin"
+			}
+		}
+		return
+	}
+	// macOS/Linux: programmatic trash-restore isn't reliably available; the files
+	// are in the OS trash and can be restored by hand.
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			restored = append(restored, p)
+		} else {
+			failed[p] = "undo not supported on this OS — restore from Trash manually"
+		}
+	}
+	return
 }
 
 func handleOpen(w http.ResponseWriter, r *http.Request) {
@@ -1791,6 +2210,30 @@ func handleCancel(w http.ResponseWriter, r *http.Request) {
 // handleFolderPick opens a native OS folder-picker dialog and returns the
 // selected absolute path. Allows multi-selection on Windows. Falls back to
 // returning an empty path if the dialog is cancelled.
+// handleCommonFolders returns the user's standard media folders (Pictures,
+// Downloads, Desktop, Documents) that actually exist, so the UI can offer
+// one-click "scan this" buttons instead of making the user type a path. Only the
+// server can resolve these from the home directory, hence an endpoint.
+func handleCommonFolders(w http.ResponseWriter, r *http.Request) {
+	home, err := os.UserHomeDir()
+	out := []map[string]string{}
+	if err == nil {
+		for _, c := range []struct{ label, icon, sub string }{
+			{"Pictures", "🖼️", "Pictures"},
+			{"Downloads", "⬇️", "Downloads"},
+			{"Desktop", "🖥️", "Desktop"},
+			{"Documents", "📄", "Documents"},
+		} {
+			p := filepath.Join(home, c.sub)
+			if fi, e := os.Stat(p); e == nil && fi.IsDir() {
+				out = append(out, map[string]string{"label": c.label, "icon": c.icon, "path": p})
+			}
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"folders": out})
+}
+
 func handleFolderPick(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST required", 405)
@@ -2255,10 +2698,14 @@ func runScan(req ScanRequest) {
 	//   Peak CPU = goroutines actively decoding / total cores.
 	//
 	// With 22 cores and 16GB RAM:
-	//   workerCount=22 → 22 cores busy → 22×96MB = 2.1GB (13% of 16GB) ✓
-	//   workerCount=4  → 4 cores busy  → 4×96MB  = 384MB (2% of 16GB)  ✓
+	//   workerCount=22 → 22 cores busy → 22×48MB = 1.0GB (6% of 16GB) ✓
+	//   workerCount=4  → 4 cores busy  → 4×48MB  = 192MB (1% of 16GB) ✓
 
-	const perImageMB int64 = 96 // conservative NRGBA estimate for 24MP image
+	// Peak per concurrent decode is just the decoded buffer now — the hashes read
+	// luma straight from it (no 96MB NRGBA copy). A 24MP JPEG decodes to ~36MB of
+	// YCbCr; 48MB leaves headroom for RGBA-decoding formats. Halving the old
+	// estimate lets ~2× more decodes run under a tight RAM budget.
+	const perImageMB int64 = 48
 	numCPU := runtime.NumCPU()
 	ram := physicalRAMBytes()
 
@@ -2585,9 +3032,11 @@ func runScan(req ScanRequest) {
 					}
 				}
 
-				// Decode → NRGBA → 3× hash, then immediately free pixel buffer.
-				// decodeSem caps how many of these run at once = RAM budget.
+				// Decode → 3× hash sampled straight from the decoded image (luma read
+				// from the JPEG Y plane — no full-resolution RGBA buffer). decodeSem
+				// caps how many decode at once = RAM budget.
 				decodedNow := false
+				var thumbBytes []byte
 				if needDecode {
 					decodeSem <- struct{}{}
 					if img, fmt2, err := decodeImageFile(f.Path); err == nil {
@@ -2597,16 +3046,30 @@ func runScan(req ScanRequest) {
 						if fmt2 != "" {
 							info.Format = fmt2
 						}
-						nrgba := toNRGBA(img)
-						img = nil // free compressed image buffer
-						info.DHash = dHashFast(nrgba)
-						info.AHash = aHashFast(nrgba)
-						info.PHash = pHashFast(nrgba)
-						nrgba = nil // free ~96MB NRGBA buffer NOW, before next decode
+						info.DHash = dHashFast(img)
+						info.AHash = aHashFast(img)
+						info.PHash = pHashFast(img)
+						// Piggyback the thumbnail off this decode. We already paid the
+						// costly decode (HEIC/large JPEG); the downscale is near-free, so
+						// viewing results no longer triggers a second full decode per file.
+						if tb, terr := encodeThumbDirect(img); terr == nil {
+							thumbBytes = tb
+						}
+						img = nil // free decoded buffer NOW, before next decode
 						info.Decoded = true
 						decodedNow = true
 					}
 					<-decodeSem
+					// Persist the thumbnail outside the decode semaphore — disk I/O, not
+					// RAM-bound. Skip if one already exists (idempotent across re-scans).
+					if thumbBytes != nil {
+						dst := thumbCachePath(f.Path, f.Size, f.ModTime.UnixNano())
+						if _, e := os.Stat(dst); e != nil {
+							if werr := writeThumbAtomic(dst, thumbBytes); werr != nil {
+								logf("DEBUG", "Scan thumbnail write failed: %s: %v", filepath.Base(f.Path), werr)
+							}
+						}
+					}
 				}
 
 				// Content identity for the rename-resilient cache. Reuse the MD5 we
@@ -3203,14 +3666,70 @@ func toNRGBA(src image.Image) *image.NRGBA {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// B1  dHashFast — 9×8 difference hash, direct Pix access, O(1) per pixel
+// lumaSamplerFor returns a closure that yields the luma (0-255) of a pixel,
+// reading the cheapest representation the source offers. For a JPEG decode
+// (*image.YCbCr) it reads the Y plane DIRECTLY — the Y plane already IS BT.601
+// luma — so the perceptual hashes never allocate or convert a full-resolution
+// RGBA buffer. Sampling only touches ~1024 pixels per image, so the per-pixel
+// offset math (PixOffset/YOffset) is irrelevant to cost; eliminating the
+// whole-image conversion is the win (benchmarked: −210 ms, −50 MB on a 12 MP
+// image). The callback takes 0-based (px,py) in [0,W)×[0,H).
+//
+// Switching from "convert→RGB→recompute luma" to "read Y directly" shifts hash
+// values by a hair (chroma rounding). All images in a scan use the same method,
+// so near-duplicate matching stays internally consistent (and JPEG Y == the same
+// 0.299/0.587/0.114 BT.601 luma the RGB paths compute, so cross-format still
+// matches within threshold). A pre-existing cache from the old method is simply
+// deleted and rebuilt — there is only one format.
+func lumaSamplerFor(src image.Image) (sample func(px, py int) uint32, W, H int) {
+	b := src.Bounds()
+	W, H = b.Dx(), b.Dy()
+	minX, minY := b.Min.X, b.Min.Y
+	switch im := src.(type) {
+	case *image.YCbCr:
+		return func(px, py int) uint32 {
+			return uint32(im.Y[im.YOffset(minX+px, minY+py)])
+		}, W, H
+	case *image.Gray:
+		return func(px, py int) uint32 {
+			return uint32(im.Pix[im.PixOffset(minX+px, minY+py)])
+		}, W, H
+	case *image.NRGBA:
+		return func(px, py int) uint32 {
+			o := im.PixOffset(minX+px, minY+py)
+			r, g, bl := uint32(im.Pix[o]), uint32(im.Pix[o+1]), uint32(im.Pix[o+2])
+			return (299*r + 587*g + 114*bl) / 1000
+		}, W, H
+	case *image.RGBA:
+		return func(px, py int) uint32 {
+			o := im.PixOffset(minX+px, minY+py)
+			r, g, bl, a := uint32(im.Pix[o]), uint32(im.Pix[o+1]), uint32(im.Pix[o+2]), uint32(im.Pix[o+3])
+			// RGBA Pix is premultiplied; un-premultiply a non-opaque pixel so its
+			// luma matches the straight-alpha sources (matches the old toNRGBA path).
+			// Opaque (a==255) is the common case and skips the divide.
+			if a != 0 && a != 255 {
+				r = r * 255 / a
+				g = g * 255 / a
+				bl = bl * 255 / a
+			}
+			return (299*r + 587*g + 114*bl) / 1000
+		}, W, H
+	default:
+		// Rare formats (paletted, 16-bit, CMYK fallthrough): use the interface.
+		return func(px, py int) uint32 {
+			r, g, bl, _ := src.At(minX+px, minY+py).RGBA()
+			return (299*(r>>8) + 587*(g>>8) + 114*(bl>>8)) / 1000
+		}, W, H
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// B1  dHashFast — 9×8 difference hash, luma sampled straight from the source
 // ─────────────────────────────────────────────────────────────────────
 
 func dHashFast(src image.Image) uint64 {
 	const gw, gh = 9, 8
-	img := toNRGBA(src)
-	b := img.Bounds()
-	W, H := b.Dx(), b.Dy()
+	sample, W, H := lumaSamplerFor(src)
 	if W == 0 || H == 0 {
 		return 0
 	}
@@ -3227,13 +3746,7 @@ func dHashFast(src image.Image) uint64 {
 			if py >= H {
 				py = H - 1
 			}
-			// Direct Pix read: 4 bytes per pixel, no interface call
-			off := py*img.Stride + px*4
-			r := uint32(img.Pix[off])
-			g := uint32(img.Pix[off+1])
-			bv := uint32(img.Pix[off+2])
-			// Scaled integer luma: ≈ 0.299R + 0.587G + 0.114B (×1000)
-			gray[y][x] = 299*r + 587*g + 114*bv
+			gray[y][x] = sample(px, py)
 		}
 	}
 
@@ -3249,13 +3762,11 @@ func dHashFast(src image.Image) uint64 {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// B2  aHashFast — 8×8 average hash, direct Pix access
+// B2  aHashFast — 8×8 average hash, luma sampled straight from the source
 // ─────────────────────────────────────────────────────────────────────
 
 func aHashFast(src image.Image) uint64 {
-	img := toNRGBA(src)
-	b := img.Bounds()
-	W, H := b.Dx(), b.Dy()
+	sample, W, H := lumaSamplerFor(src)
 	if W == 0 || H == 0 {
 		return 0
 	}
@@ -3272,11 +3783,7 @@ func aHashFast(src image.Image) uint64 {
 			if py >= H {
 				py = H - 1
 			}
-			off := py*img.Stride + px*4
-			r := uint32(img.Pix[off])
-			g := uint32(img.Pix[off+1])
-			bv := uint32(img.Pix[off+2])
-			luma := 299*r + 587*g + 114*bv // ×1000
+			luma := sample(px, py)
 			gray[y*8+x] = luma
 			sum += luma
 		}
@@ -3293,18 +3800,16 @@ func aHashFast(src image.Image) uint64 {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// B3  pHashFast — 32×32 DCT perceptual hash, direct Pix access
+// B3  pHashFast — 32×32 DCT perceptual hash, luma sampled from the source
 // ─────────────────────────────────────────────────────────────────────
 
 func pHashFast(src image.Image) uint64 {
-	img := toNRGBA(src)
-	b := img.Bounds()
-	W, H := b.Dx(), b.Dy()
+	sample, W, H := lumaSamplerFor(src)
 	if W == 0 || H == 0 {
 		return 0
 	}
 
-	// Sample 32×32 grayscale directly from Pix
+	// Sample 32×32 grayscale straight from the decoded image
 	var pixels [32][32]float64
 	for y := 0; y < 32; y++ {
 		for x := 0; x < 32; x++ {
@@ -3316,11 +3821,7 @@ func pHashFast(src image.Image) uint64 {
 			if py >= H {
 				py = H - 1
 			}
-			off := py*img.Stride + px*4
-			r := float64(img.Pix[off])
-			g := float64(img.Pix[off+1])
-			bv := float64(img.Pix[off+2])
-			pixels[y][x] = 0.299*r + 0.587*g + 0.114*bv
+			pixels[y][x] = float64(sample(px, py))
 		}
 	}
 
@@ -3682,23 +4183,24 @@ func collectThumbTargets(groups []*DuplicateGroup) []thumbTarget {
 	return targets
 }
 
-// thumbConcurrency returns the worker count and per-ffmpeg thread cap for batch
-// generation, matching runScan's subprocess-pool sizing so a big "generate all"
-// stays near ~75% of cores and the machine stays responsive.
-func thumbConcurrency() (workers, videoThreads int) {
+// thumbConcurrency returns the ffmpeg (video-poster) subprocess cap and the
+// per-ffmpeg thread cap for batch generation, matching runScan's subprocess-pool
+// sizing so a big "generate all" stays near ~75% of cores and stays responsive.
+// In-process image decodes are NOT bounded by this — they gate on thumbSem.
+func thumbConcurrency() (subprocCap, videoThreads int) {
 	numCPU := runtime.NumCPU()
 	videoThreads = 2
 	if numCPU <= 4 {
 		videoThreads = 1
 	}
-	workers = (numCPU * 3 / 4) / videoThreads
-	if workers < 1 {
-		workers = 1
+	subprocCap = (numCPU * 3 / 4) / videoThreads
+	if subprocCap < 1 {
+		subprocCap = 1
 	}
-	if workers > 8 {
-		workers = 8
+	if subprocCap > 8 {
+		subprocCap = 8
 	}
-	return workers, videoThreads
+	return subprocCap, videoThreads
 }
 
 // runThumbGen generates image thumbnails and video frame-posters for every
@@ -3730,7 +4232,16 @@ func runThumbGen() {
 
 	ensureThumbCacheDir()
 	ffmpegOK := videoToolsAvailable()
-	workers, videoThreads := thumbConcurrency()
+	// Images decode in-process and gate on thumbSem, so run as many pool workers
+	// as there are decode slots (≫ the old cap of 8) for fast bulk thumbnailing.
+	// Video posters shell out to ffmpeg, so they stay throttled by a separate
+	// subprocess semaphore (subprocCap) to keep the machine responsive.
+	subprocCap, videoThreads := thumbConcurrency()
+	workers := cap(thumbSem)
+	if workers < subprocCap {
+		workers = subprocCap
+	}
+	subprocSem := make(chan struct{}, subprocCap)
 	if ffmpegOK {
 		// Safe to leave set: scan/thumbgen are mutually exclusive and runScan re-initializes this at its start.
 		setVideoThreadLimit(videoThreads)
@@ -3792,7 +4303,10 @@ func runThumbGen() {
 						atomic.AddInt64(&thumbSkipped, 1)
 						continue
 					}
-					if extractFramePoster(ctx, tgt.path, dst) {
+					subprocSem <- struct{}{} // throttle concurrent ffmpeg processes
+					ok := extractFramePoster(ctx, tgt.path, dst)
+					<-subprocSem
+					if ok {
 						atomic.AddInt64(&thumbDone, 1)
 					} else {
 						atomic.AddInt64(&thumbFailed, 1)

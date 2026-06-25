@@ -145,3 +145,97 @@ func TestCacheRenameIndexAfterClear(t *testing.T) {
 		t.Error("rename index must be empty after Clear")
 	}
 }
+
+// TestJournalRecoversInterruptedScan is the durability fix: entries Set after
+// OpenJournal are written to the journal immediately, so a process that dies
+// before it can compact (no Save) still has its work recovered by the next run.
+func TestJournalRecoversInterruptedScan(t *testing.T) {
+	jpath := filepath.Join(t.TempDir(), "cache.log")
+	mt := time.Unix(1700000000, 0)
+
+	// Run 1: journaling on, two entries computed, then "crash" (no Save/Close).
+	c1 := NewCache()
+	if _, err := c1.OpenJournal(jpath); err != nil {
+		t.Fatal(err)
+	}
+	c1.Set("/a/clip.mp4", &CacheEntry{Size: 100, ModUnix: mt.UnixNano(), MD5: "aaa", HasVHashes: true, VHashes: []uint64{1, 2}})
+	c1.Set("/b/song.mp3", &CacheEntry{Size: 200, ModUnix: mt.UnixNano(), HasAHashes: true, AHashes: []uint32{9}})
+	c1.CloseJournal() // release the handle; the log on disk is exactly a crash's state
+
+	// Run 2: a fresh cache (empty snapshot) replays the journal on open.
+	c2 := NewCache()
+	recovered, err := c2.OpenJournal(jpath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c2.CloseJournal()
+	if recovered != 2 {
+		t.Fatalf("expected to recover 2 entries from journal, got %d", recovered)
+	}
+	if e, ok := c2.Get("/a/clip.mp4", 100, mt); !ok || !e.HasVHashes || len(e.VHashes) != 2 {
+		t.Errorf("video entry not recovered: ok=%v entry=%+v", ok, e)
+	}
+	if e, ok := c2.Get("/b/song.mp3", 200, mt); !ok || !e.HasAHashes {
+		t.Errorf("audio entry not recovered: ok=%v entry=%+v", ok, e)
+	}
+}
+
+// TestJournalCompactsOnSave verifies Save folds the journal into the snapshot and
+// truncates the log, so it does not grow without bound across scans.
+func TestJournalCompactsOnSave(t *testing.T) {
+	dir := t.TempDir()
+	jpath := filepath.Join(dir, "cache.log")
+	spath := filepath.Join(dir, "cache.json")
+	mt := time.Unix(1700000000, 0)
+
+	c := NewCache()
+	if _, err := c.OpenJournal(jpath); err != nil {
+		t.Fatal(err)
+	}
+	defer c.CloseJournal()
+	c.Set("/a/x.jpg", &CacheEntry{Size: 10, ModUnix: mt.UnixNano(), MD5: "x"})
+	beforeStat, _ := os.Stat(jpath)
+	if err := c.Save(spath); err != nil {
+		t.Fatal(err)
+	}
+	afterStat, err := os.Stat(jpath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterStat.Size() >= beforeStat.Size() {
+		t.Errorf("journal should shrink after compaction: before=%d after=%d", beforeStat.Size(), afterStat.Size())
+	}
+	// The snapshot must now hold the entry, and a reload must still find it.
+	c2 := NewCache()
+	if err := c2.Load(spath); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := c2.Get("/a/x.jpg", 10, mt); !ok {
+		t.Error("snapshot must contain the entry after compaction")
+	}
+}
+
+// TestJournalSkipsTornLine verifies a malformed/torn final line (the classic
+// crash-mid-write artifact) is skipped, while valid records before it still load.
+func TestJournalSkipsTornLine(t *testing.T) {
+	jpath := filepath.Join(t.TempDir(), "cache.log")
+	mt := time.Unix(1700000000, 0)
+	// One good record (m is UnixNano), then a half-written line cut off by a "crash".
+	good := `{"p":"/a/x.jpg","e":{"s":10,"m":1700000000000000000,"md5":"x"}}`
+	data := good + "\n" + `{"p":"/a/y.jpg","e":{"s":20,"m":17000` // truncated, no newline
+	if err := os.WriteFile(jpath, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := NewCache()
+	recovered, err := c.OpenJournal(jpath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.CloseJournal()
+	if recovered != 1 {
+		t.Errorf("expected 1 valid record recovered (torn line skipped), got %d", recovered)
+	}
+	if _, ok := c.Get("/a/x.jpg", 10, mt); !ok {
+		t.Error("the valid record before the torn line must load")
+	}
+}

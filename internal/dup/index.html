@@ -44,7 +44,7 @@
 }
 *{box-sizing:border-box; margin:0; padding:0}
 /* Tabular figures so sizes, counts & the hero read like a precise instrument */
-.grp-count,.img-detail,.rv,.fp-stat,.hero-num,.hero-stats,.sta-txt{font-variant-numeric:tabular-nums}
+.grp-count,.img-detail,.rv,.fstat,.hero-num,.hero-stats,.sta-txt{font-variant-numeric:tabular-nums}
 @media (prefers-reduced-motion:reduce){*{transition:none !important; animation:none !important}}
 html,body{background:var(--bg); color:var(--text); height:100vh; overflow:hidden}
 html{transition:background-color .25s var(--ease)}
@@ -88,7 +88,7 @@ input,textarea,select{font-family:inherit; outline:none}
 .hero-stats .hs{display:flex; flex-direction:column; gap:3px}
 .hero-stats .hs b{font-size:18px; font-weight:700; color:var(--text); letter-spacing:-.01em}
 .hero-stats .hs span{font-size:10px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--muted)}
-.hero-actions{margin-left:auto; display:flex; gap:10px; flex-shrink:0}
+.hero-actions{margin-left:auto; display:flex; gap:10px; flex-shrink:0; flex-wrap:wrap; justify-content:flex-end}
 .hero-actions .btn-primary{width:auto; padding:9px 17px}
 .sb-hd h1{font-size:16px; font-weight:700; display:flex; align-items:center; gap:8px; color:var(--accent-l)}
 .sb-hd p{color:var(--muted); font-size:11px; margin-top:3px}
@@ -289,6 +289,9 @@ input[type=range]::-moz-range-thumb{
 }
 .sort-btn:hover{border-color:var(--border2); color:var(--text)}
 .sort-btn.on{background:rgba(99,102,241,.18); border-color:var(--accent); color:var(--accent-l)}
+/* Folder breakdown toggle — accent-tinted so it stands out from the gray sort/filter buttons. */
+#folderBtn{border-color:var(--accent); color:var(--accent-l)}
+#folderBtn:hover{background:rgba(99,102,241,.12); color:var(--accent-l)}
 .sep{width:1px; height:18px; background:var(--border); flex-shrink:0}
 .grp-count{font-size:11px; color:var(--text-dim); margin-left:auto; font-weight:600}
 
@@ -296,27 +299,46 @@ input[type=range]::-moz-range-thumb{
 .pager{display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 0; flex-wrap:wrap}
 .pager-info{font-size:12px; color:var(--text-dim); font-weight:600; min-width:90px; text-align:center}
 
-/* ═══ FOLDER BREAKDOWN PANEL ═══ */
-#folder-panel{
-  background:var(--surface); border-bottom:1px solid var(--border);
-  padding:10px 18px; flex-shrink:0; max-height:34vh; overflow-y:auto;
+/* ═══ FOLDER BREAKDOWN TREE (popup) ═══ */
+#folderModal{
+  display:none; position:fixed; inset:0;
+  background:rgba(0,0,0,.92); z-index:100;
+  align-items:center; justify-content:center;
 }
-.fp-hd{display:flex; align-items:center; gap:8px; margin-bottom:8px}
-.fp-hd h4{font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--muted)}
-.fp-hd .fp-sub{font-size:11px; color:var(--text-dim)}
-.fp-row{
-  display:flex; align-items:center; gap:10px; padding:6px 8px;
-  border:1px solid var(--border); border-radius:6px; margin-bottom:6px; background:var(--card);
+#folderModal.open{display:flex}
+.fbox{
+  background:var(--card); border:1px solid var(--border2); border-radius:14px;
+  width:min(94vw, 760px); max-height:86vh;
+  display:flex; flex-direction:column; overflow:hidden; box-shadow:var(--shadow-lg);
 }
-.fp-row:hover{border-color:var(--border2)}
-.fp-path{
-  flex:1; min-width:0; font-size:12px; color:var(--text);
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-  direction:rtl; text-align:left;   /* truncate the START so the folder name stays visible */
+.fm-tools{
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  padding:8px 16px; border-bottom:1px solid var(--border); background:var(--surface);
 }
-.fp-stat{font-size:11px; color:var(--text-dim); white-space:nowrap}
-.fp-stat b{color:var(--warn)}
-.fp-actions{display:flex; gap:5px; flex-shrink:0}
+.fm-hint{font-size:11px; color:var(--text-dim); margin-right:auto}
+.fm-hint b{color:var(--text)}
+.ftree{overflow-y:auto; padding:8px 10px 14px}
+.fp-sub{font-size:12px; color:var(--text-dim); padding:14px 8px}
+.fnode-row{
+  display:flex; align-items:center; gap:8px;
+  padding:5px 6px; border-radius:6px; min-height:30px;
+}
+.fnode-row:hover{background:var(--card2)}
+.ftw{
+  width:18px; height:18px; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+  font-size:13px; font-weight:800; color:var(--text-dim);
+  border-radius:4px; user-select:none;
+}
+.ftw.on{cursor:pointer; border:1px solid var(--border); background:var(--card2)}
+.ftw.on:hover{color:var(--accent-l); border-color:var(--accent)}
+.fname{
+  flex:1; min-width:60px; font-size:12px; color:var(--text); font-weight:600;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.fstat{font-size:11px; color:var(--text-dim); white-space:nowrap}
+.fstat b{color:var(--warn)}
+.factions{display:flex; gap:5px; flex-shrink:0}
 .folder-chip{
   display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:600;
   color:var(--accent-l); background:rgba(99,102,241,.15);
@@ -325,6 +347,33 @@ input[type=range]::-moz-range-thumb{
 .folder-chip span:first-child{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .folder-chip .x{cursor:pointer; color:var(--text-dim); font-weight:700; flex-shrink:0}
 .folder-chip .x:hover{color:var(--danger)}
+
+/* ═══ PRE-DELETE CONFIRMATION ═══ */
+#confirmModal{
+  display:none; position:fixed; inset:0;
+  background:rgba(0,0,0,.92); z-index:110;
+  align-items:center; justify-content:center;
+}
+#confirmModal.open{display:flex}
+.cbox{
+  background:var(--card); border:1px solid var(--border2); border-radius:14px;
+  width:min(94vw, 470px); display:flex; flex-direction:column;
+  overflow:hidden; box-shadow:var(--shadow-lg);
+}
+.cf-body{padding:16px; font-size:13px; color:var(--text); line-height:1.5}
+.cf-row{display:flex; justify-content:space-between; gap:12px; padding:6px 0; border-bottom:1px solid var(--border)}
+.cf-row:last-child{border-bottom:none}
+.cf-row .cf-k{color:var(--text-dim)}
+.cf-row b{color:var(--text); font-weight:700}
+.cf-row b.red{color:var(--danger)}
+.cf-mode{margin-top:12px; font-size:12px; color:var(--text-dim)}
+.cf-mode b{color:var(--text)}
+.cf-warn{
+  margin-top:12px; padding:10px 12px; border-radius:8px;
+  background:rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.4);
+  color:var(--warn); font-size:12px; font-weight:600;
+}
+.cf-actions{display:flex; justify-content:flex-end; gap:8px; padding:12px 16px; border-top:1px solid var(--border); background:var(--card2)}
 
 /* ═══════════════════════════════════════════════════════════════════
    #results — plain block layout. Previously this was display:flex
@@ -349,6 +398,12 @@ input[type=range]::-moz-range-thumb{
 .empty h2{font-size:20px; color:var(--text); font-weight:700}
 .empty p{font-size:13px; max-width:380px; line-height:1.7}
 .empty p b{color:var(--accent-l)}
+.empty-sub{font-size:11px; color:var(--muted); margin-top:6px}
+/* Landing-screen quick-scan + recent folder buttons. */
+.quick-start{display:flex; flex-direction:column; gap:10px; margin:6px 0 2px; width:100%; max-width:560px}
+.qs-row{display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:center}
+.qs-lbl{font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); min-width:74px; text-align:right}
+.quick-start .btn{max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 
 /* ═══════════════════════════════════════════════════════════════════
    GROUP CARD — bulletproof fixed-pixel layout
@@ -361,10 +416,31 @@ input[type=range]::-moz-range-thumb{
   margin-bottom:14px;     /* replaces parent's gap */
   flex-shrink:0;          /* extra safety: never compressible */
   contain:layout style;   /* isolate so flex elsewhere can't reach in */
+  /* Skip layout/paint for off-screen cards — the browser virtualizes a long
+     results list for free. contain-intrinsic-size gives an off-screen height
+     estimate so the scrollbar stays sane before a card is first rendered. */
+  content-visibility:auto;
+  contain-intrinsic-size:auto 340px;
   box-shadow:var(--shadow-sm);
 }
+/* The "+N more" tile that expands a big group's remaining duplicates on demand. */
+.img-more{
+  flex-shrink:0; align-self:stretch; min-width:96px; min-height:160px;
+  display:flex; align-items:center; justify-content:center; text-align:center;
+  border:1px dashed var(--border2); border-radius:8px;
+  background:var(--card2); color:var(--text-dim); font-size:12px; font-weight:700;
+  cursor:pointer; padding:0 10px;
+}
+.img-more:hover{border-color:var(--accent); color:var(--accent-l)}
 .gcard:last-child{margin-bottom:0}
 .gcard:hover{border-color:var(--border2)}
+/* Brief pulse used by "Review results" to confirm the jump-to-top click. */
+@keyframes cardFlash{
+  0%{box-shadow:0 0 0 0 rgba(99,102,241,0)}
+  20%{box-shadow:0 0 0 3px rgba(99,102,241,.55)}
+  100%{box-shadow:0 0 0 0 rgba(99,102,241,0)}
+}
+.gcard.flash{animation:cardFlash 1.3s ease}
 
 .gcard-hd{
   display:flex; align-items:center; gap:10px;
@@ -471,6 +547,14 @@ input[type=range]::-moz-range-thumb{
 }
 .state-tag.keep{background:var(--success)}
 .state-tag.del{background:var(--danger)}
+/* Suggested-keeper marker (best copy to keep) — bottom-left so it never collides
+   with the top-left checkbox or the top-right KEEP/DELETE tag. */
+.best-badge{
+  position:absolute; bottom:8px; left:8px; z-index:3;
+  background:var(--success); color:#fff;
+  font-size:9px; font-weight:800; letter-spacing:.05em;
+  padding:3px 8px; border-radius:999px; box-shadow:var(--shadow-sm);
+}
 
 .img-meta{
   padding:8px 10px;
@@ -756,11 +840,11 @@ input[type=range]::-moz-range-thumb{
       <h3>⚙️ Detection Mode</h3>
       <div class="fg">
         <select class="fc" id="modeSel">
-          <option value="exact">Exact only (MD5) — fastest</option>
-          <option value="quick" selected>Quick: Exact + dHash — balanced</option>
-          <option value="standard">Standard: Exact + pHash — robust to compression</option>
-          <option value="robust">Robust: Exact + dHash + aHash</option>
-          <option value="smart">Smart: Exact + ALL 3 perceptual (best accuracy)</option>
+          <option value="exact">Exact copies only — identical files</option>
+          <option value="quick" selected>Also find resized &amp; edited — recommended</option>
+          <option value="standard">Robust to compression &amp; quality</option>
+          <option value="robust">Higher-confidence near-duplicates</option>
+          <option value="smart">Find even heavily-changed — most thorough</option>
         </select>
         <p style="font-size:10px; color:var(--muted); margin-top:5px; line-height:1.5" id="modeHelp"></p>
       </div>
@@ -977,6 +1061,7 @@ input[type=range]::-moz-range-thumb{
     <div class="hero-stats" id="heroStats"></div>
     <div class="hero-actions">
       <button class="btn btn-primary btn-sm" id="heroClean" onclick="App.smartCleanup()">✨ Smart Cleanup</button>
+      <button class="btn btn-ghost btn-sm" onclick="App.openFolderModal()">📁 Folders</button>
       <button class="btn btn-ghost btn-sm" onclick="App.reviewResults()">Review results</button>
       <button class="btn btn-ghost btn-sm" id="thumbGenBtn" onclick="App.startThumbGen()">🖼️ Generate thumbnails</button>
       <div id="thumbProg" style="display:none; align-items:center; gap:8px">
@@ -1006,6 +1091,7 @@ input[type=range]::-moz-range-thumb{
         <span>🗑️ Recycle Bin</span>
       </label>
       <button class="btn btn-danger btn-sm" id="delSelBtn" onclick="App.deleteSelected()" style="display:none">Delete (0)</button>
+      <button class="btn btn-ghost btn-sm" id="undoBtn" onclick="App.undoDelete()" style="display:none" title="Restore the files from the last deletion out of the Recycle Bin">↩ Undo delete</button>
       <div class="tbsep"></div>
       <button class="btn btn-ghost btn-sm" id="viewBtn" onclick="App.toggleView()">⊞ Grid</button>
     </div>
@@ -1055,7 +1141,7 @@ input[type=range]::-moz-range-thumb{
     <button class="sort-btn" data-flt="exact" onclick="App.setFlt('exact',this)">Exact</button>
     <button class="sort-btn" data-flt="perceptual" onclick="App.setFlt('perceptual',this)">Perceptual</button>
     <div class="sep"></div>
-    <button class="sort-btn" id="folderBtn" onclick="App.toggleFolderPanel()">📁 Folders</button>
+    <button class="sort-btn" id="folderBtn" onclick="App.openFolderModal()">📁 Folders</button>
     <div class="sep"></div>
     <span class="lbl">Select (all pages):</span>
     <button class="sort-btn" onclick="App.selectAllGlobal('dupes')" title="Select every duplicate across all pages, keeping the best copy in each group">All duplicates</button>
@@ -1065,14 +1151,13 @@ input[type=range]::-moz-range-thumb{
     <span class="grp-count" id="grpCount"></span>
   </div>
 
-  <div id="folder-panel" style="display:none"></div>
-
   <div id="results">
     <div class="empty">
       <div class="empty-ico">🔍</div>
       <h2>Find Duplicate Files</h2>
-      <p>Enter folder paths in the sidebar and click <b>Start Scan</b>.</p>
-      <p>Supports images (JPG, PNG, HEIC, WEBP, RAW…), videos, audio, documents & archives.</p>
+      <p>Pick a folder to scan — or enter paths in the sidebar.</p>
+      <div id="quickStart" class="quick-start"></div>
+      <p class="empty-sub">Supports images (JPG, PNG, HEIC, WEBP, RAW…), videos, audio, documents & archives.</p>
     </div>
   </div>
 
@@ -1131,6 +1216,38 @@ input[type=range]::-moz-range-thumb{
     </div>
     <div class="mstrip-wrap">
       <div class="mstrip" id="mStrip"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Folder breakdown tree (popup) -->
+<div id="folderModal">
+  <div class="fbox">
+    <div class="mhd">
+      <h2>📁 Folders containing duplicates</h2>
+      <span class="mhd-info" id="fmInfo"></span>
+      <button class="mcls" onclick="App.closeFolderModal()">✕</button>
+    </div>
+    <div class="fm-tools">
+      <span class="fm-hint">Click <b>+</b> / <b>−</b> to expand sub-folders. Counts include everything underneath.</span>
+      <button class="btn btn-ghost btn-xs" onclick="App.expandAllFolders(true)">Expand all</button>
+      <button class="btn btn-ghost btn-xs" onclick="App.expandAllFolders(false)">Collapse all</button>
+    </div>
+    <div class="ftree" id="fmTree"></div>
+  </div>
+</div>
+
+<!-- Pre-delete confirmation -->
+<div id="confirmModal">
+  <div class="cbox">
+    <div class="mhd">
+      <h2 id="cfTitle">Confirm delete</h2>
+      <button class="mcls" onclick="App.closeConfirm()">✕</button>
+    </div>
+    <div class="cf-body" id="cfBody"></div>
+    <div class="cf-actions">
+      <button class="btn btn-ghost btn-sm" onclick="App.closeConfirm()">Cancel</button>
+      <button class="btn btn-danger btn-sm" id="cfOk">Delete</button>
     </div>
   </div>
 </div>
@@ -1216,6 +1333,13 @@ function isVideoPath(p) {
   const dot = p.lastIndexOf('.');
   return dot >= 0 && VIDEO_EXTS.has(p.slice(dot + 1).toLowerCase());
 }
+// Image extensions the backend can thumbnail (mirrors allImgExts). Used to decide
+// whether auto thumbnail-warming has anything to do.
+const IMAGE_EXTS = new Set(['jpg','jpeg','png','gif','bmp','tif','tiff','webp','heic','heif']);
+function isImagePath(p) {
+  const dot = p.lastIndexOf('.');
+  return dot >= 0 && IMAGE_EXTS.has(p.slice(dot + 1).toLowerCase());
+}
 
 const App = {
   groups: [],
@@ -1224,7 +1348,7 @@ const App = {
   selPaths: new Set(),
   sort: 'wasted', flt: 'all', view: 'grid',
   page: 0, pageSize: 60,
-  folderFilter: '', folderPanelOpen: false,
+  folderFilter: '',
   pollTimer: null, scanDone: false, _pollFails: 0,
   modGid: null, modIdxL: 0, modIdxR: null, modCmp: false,
   activeHoverVid: null,
@@ -1248,23 +1372,36 @@ const App = {
       '&theme=' + (document.documentElement.getAttribute('data-theme') || 'dark') +
       (this.thumbVer ? '&v=' + this.thumbVer : '');
   },
-  async startThumbGen() {
+  // auto=true → started automatically after a scan: stay quiet (no toasts), the
+  // progress bar is feedback enough and warm re-scans finish near-instantly.
+  async startThumbGen(auto = false) {
+    this._thumbAuto = auto;
     try {
       const res = await fetch('/api/thumbnails/generate', { method: 'POST' });
-      if (res.status === 409) { this.toast('Busy — finish the current scan first', 'err'); return; }
-      if (res.status === 400) { this.toast('No image or video files to generate', 'info'); return; }
-      if (!res.ok) { this.toast('Could not start generation', 'err'); return; }
+      if (res.status === 409) { if (!auto) this.toast('Busy — finish the current scan first', 'err'); return; }
+      if (res.status === 400) { if (!auto) this.toast('No image or video files to generate', 'info'); return; }
+      if (!res.ok) { if (!auto) this.toast('Could not start generation', 'err'); return; }
       document.getElementById('thumbGenBtn').style.display = 'none';
       document.getElementById('thumbProg').style.display = 'flex';
       this.thumbDone = false;
+      this._thumbPollFails = 0;
+      this._thumbPolling = false;
       this.thumbTimer = setInterval(() => this.pollThumbGen(), 500);
     } catch (e) {
-      this.toast('Generation failed to start: ' + e.message, 'err');
+      if (!auto) this.toast('Generation failed to start: ' + e.message, 'err');
     }
   },
   async pollThumbGen() {
+    // Don't let polls stack: if a fetch is still in flight (the server is busy
+    // decoding and slow to answer), skip this tick. Without this, setInterval
+    // piles up hanging requests that exhaust the browser's connection pool.
+    if (this._thumbPolling) return;
+    this._thumbPolling = true;
     try {
-      const p = await fetch('/api/thumbnails/progress').then(r => r.json());
+      // Time-box the request so a saturated server fails fast (and counts as a
+      // failure) instead of hanging and holding a connection open.
+      const p = await fetch('/api/thumbnails/progress', { signal: AbortSignal.timeout(4000) }).then(r => r.json());
+      this._thumbPollFails = 0;
       const total = p.total || 0;
       const settled = (p.done || 0) + (p.failed || 0) + (p.skipped || 0);
       const pct = total > 0 ? (settled / total * 100) : 0;
@@ -1278,25 +1415,48 @@ const App = {
         const btn = document.getElementById('thumbGenBtn');
         btn.style.display = '';
         btn.textContent = '🖼️ Regenerate thumbnails';
-        this.toast(p.status || 'Thumbnails generated', 'ok');
+        if (!this._thumbAuto) this.toast(p.status || 'Thumbnails generated', 'ok');
         this.refreshThumbs();
       }
     } catch (e) {
+      // Don't spam the log/server forever if the poll keeps failing (e.g. the
+      // browser ran out of connections under load) — back off and restore the
+      // button so the user can retry instead of being stuck on a dead progress bar.
+      this._thumbPollFails = (this._thumbPollFails || 0) + 1;
       Logger.error('Thumb poll error', e);
+      if (this._thumbPollFails >= 8) {
+        clearInterval(this.thumbTimer);
+        this.thumbTimer = null;
+        document.getElementById('thumbProg').style.display = 'none';
+        document.getElementById('thumbGenBtn').style.display = '';
+        // Stop the runaway server-side job too, so it doesn't keep pinning the CPU
+        // headless after we've given up polling it.
+        fetch('/api/thumbnails/cancel', { method: 'POST' }).catch(() => {});
+        this.toast('Lost contact with the thumbnail generator — stopped it. Please retry.', 'err');
+      }
+    } finally {
+      this._thumbPolling = false;
     }
   },
   async cancelThumbGen() {
     try { await fetch('/api/thumbnails/cancel', { method: 'POST' }); this.toast('Cancelling…', 'info'); }
     catch (e) { /* best-effort */ }
   },
-  // Bump the cache-bust version and re-point currently-rendered VIDEO tiles so
-  // freshly generated posters replace the placeholder icons. Image tiles already
-  // load from the warmed disk cache on (re)render, so they're left untouched.
+  // Bump the cache-bust version and re-point tiles whose thumbnail wasn't ready
+  // when they first loaded — video posters, plus any image tile that previously
+  // FAILED (showed the fallback icon) and now has a freshly-generated thumbnail
+  // on disk. Tiles that already loaded fine are left alone (no needless reload).
   refreshThumbs() {
     this.thumbVer = (this.thumbVer || 0) + 1;
     document.querySelectorAll('.img-thumb img').forEach(im => {
       const p = im.getAttribute('data-path');
-      if (p && isVideoPath(p)) im.src = this.thumbUrl(p);
+      if (!p) return;
+      const failed = im.style.display === 'none' || (im.complete && im.naturalWidth === 0);
+      if (isVideoPath(p) || failed) {
+        im.style.display = ''; // un-hide a previously-failed image tile so it can retry
+        im.src = this.thumbUrl(p);
+        return;
+      }
     });
   },
 
@@ -1393,10 +1553,25 @@ const App = {
     document.getElementById('modal').addEventListener('click', e => {
       if (e.target === document.getElementById('modal')) this.closeModal();
     });
+    // Folder popup: Escape closes it; clicking the dark backdrop closes it.
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && document.getElementById('folderModal').classList.contains('open')) this.closeFolderModal();
+    });
+    document.getElementById('folderModal').addEventListener('click', e => {
+      if (e.target === document.getElementById('folderModal')) this.closeFolderModal();
+    });
+    // Confirm-delete popup: same Escape / backdrop-close behaviour.
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && document.getElementById('confirmModal').classList.contains('open')) this.closeConfirm();
+    });
+    document.getElementById('confirmModal').addEventListener('click', e => {
+      if (e.target === document.getElementById('confirmModal')) this.closeConfirm();
+    });
     this.onModeChange();
     this.refreshCacheStats();
     this.checkSession();
     this.loadRules();
+    this.renderQuickStart(); // populate the landing screen's quick-scan + recent buttons
     Logger.info('App initialized');
   },
 
@@ -1515,11 +1690,11 @@ const App = {
   onModeChange() {
     const m = document.getElementById('modeSel').value;
     const help = {
-      exact:    'Only finds byte-identical files via MD5. Very fast. Misses resized/recompressed copies.',
-      quick:    'Default. Catches identical files + visually similar via dHash. Fast and effective.',
-      standard: 'pHash uses DCT — very robust against compression and quality changes.',
-      robust:   'Combines dHash + aHash for higher confidence on near-duplicates.',
-      smart:    'Most accurate. Combines all 3 perceptual hashes (2-of-3 must match). Slower.',
+      exact:    'Finds only byte-for-byte identical copies (the same file saved twice). Very fast — but won\'t catch resized or re-saved versions.  ·  uses MD5',
+      quick:    'Recommended. Catches identical files plus resized, re-saved and lightly-edited copies. Fast and effective for most photo libraries.  ·  uses Exact + dHash',
+      standard: 'Best when copies were re-compressed or saved at a different quality — e.g. photos sent through messaging apps.  ·  uses Exact + pHash (DCT)',
+      robust:   'Higher confidence on look-alikes by combining two visual fingerprints.  ·  uses Exact + dHash + aHash',
+      smart:    'Most thorough — finds even heavily changed copies. Slower; 2 of 3 visual fingerprints must agree.  ·  uses Exact + all 3 perceptual',
     };
     document.getElementById('modeHelp').textContent = help[m] || '';
     document.getElementById('thrFg').style.display = m === 'exact' ? 'none' : '';
@@ -1682,7 +1857,9 @@ const App = {
     return on ? on.dataset.cat : 'images';
   },
 
-  fmtDuration(sec) {
+  // Media length as M:SS (for video/audio tiles). Distinct from fmtDuration,
+  // which formats an elapsed/remaining ETA as "Xm Ys".
+  fmtVideoDuration(sec) {
     sec = Math.round(sec);
     const m = Math.floor(sec / 60), s = sec % 60;
     return m + ':' + String(s).padStart(2, '0');
@@ -1693,6 +1870,7 @@ const App = {
     const dirsRaw = document.getElementById('dirsIn').value.trim();
     const dirs = dirsRaw.split('\n').map(s => s.trim()).filter(Boolean);
     if (!dirs.length) { this.toast('Enter at least one folder path', 'err'); return; }
+    this.addRecentFolders(dirs); // remember for the quick-start "Recent" list
 
     const excludesRaw = document.getElementById('excludeIn').value.trim();
     const excludes = excludesRaw ? excludesRaw.split('\n').map(s => s.trim()).filter(Boolean) : [];
@@ -1752,6 +1930,7 @@ const App = {
     }
     this.scanDone = false;
     this._pollFails = 0;
+    this._etaSamples = []; // fresh ETA window for this scan
     if (this.pollTimer) clearInterval(this.pollTimer); // never stack pollers
     this.pollTimer = setInterval(() => this.pollProgress(), 350);
   },
@@ -1766,6 +1945,33 @@ const App = {
     }
   },
 
+  // Live scan speed + ETA from a ~6s sliding window of (time, processed) samples.
+  // A windowed rate tracks the CURRENT phase (e.g. slow HEIC decode) far better
+  // than the backend's cumulative average, which is skewed by the instant file
+  // enumeration at the start — so the "time left" estimate is actually useful.
+  scanLiveStats(p) {
+    const now = (performance && performance.now) ? performance.now() : Date.now();
+    this._etaSamples = this._etaSamples || [];
+    this._etaSamples.push({ t: now, p: p.processed || 0 });
+    while (this._etaSamples.length > 2 && now - this._etaSamples[0].t > 6000) this._etaSamples.shift();
+    const a = this._etaSamples[0], b = this._etaSamples[this._etaSamples.length - 1];
+    const dt = (b.t - a.t) / 1000, dp = b.p - a.p;
+    let rate = (dt > 0 && dp > 0) ? dp / dt : (p.rate || 0);
+    let eta = '';
+    if (p.total > 0 && p.processed < p.total && rate > 0) {
+      eta = '~' + this.fmtDuration((p.total - p.processed) / rate) + ' left';
+    }
+    return { rate, eta };
+  },
+  fmtDuration(s) {
+    s = Math.max(0, Math.round(s));
+    if (s < 60) return s + 's';
+    const m = Math.floor(s / 60), sec = s % 60;
+    if (m < 60) return m + 'm' + (sec ? ' ' + sec + 's' : '');
+    const h = Math.floor(m / 60);
+    return h + 'h ' + (m % 60) + 'm';
+  },
+
   async pollProgress() {
     try {
       const p = await fetch('/api/progress').then(r => r.json());
@@ -1774,9 +1980,13 @@ const App = {
       const bar = document.getElementById('progBar');
       bar.className = 'prog-bar';
       bar.style.width = pct.toFixed(1) + '%';
+      const ls = this.scanLiveStats(p);
+      const counts = p.total > 0 ? ' · ' + (p.processed || 0).toLocaleString() + '/' + p.total.toLocaleString() : '';
       document.getElementById('staTxt').textContent =
-        p.status + (p.rate > 0 ? ' · ' + Math.round(p.rate) + ' img/s' : '') +
-        (p.heap_mb > 0 ? ' · RAM: ' + Math.round(p.heap_mb) + 'MB heap' : '');
+        p.status + counts +
+        (ls.eta ? ' · ' + ls.eta : '') +
+        (ls.rate > 0 ? ' · ' + Math.round(ls.rate) + ' img/s' : '') +
+        (p.heap_mb > 0 ? ' · ' + Math.round(p.heap_mb) + 'MB' : '');
 
       if (p.done && !this.scanDone) {
         this.scanDone = true;
@@ -1829,15 +2039,18 @@ const App = {
     this.selPaths.clear();
     this.modGid = null; this.modIdxL = 0; this.modIdxR = null;
     document.getElementById('results').innerHTML =
-      '<div class="empty"><div class="empty-ico">🔍</div><h2>Find Duplicate Files</h2><p>Enter folder paths and click Start Scan.</p></div>';
+      '<div class="empty"><div class="empty-ico">🔍</div><h2>Find Duplicate Files</h2>' +
+      '<p>Pick a folder to scan — or enter paths in the sidebar.</p><div id="quickStart" class="quick-start"></div></div>';
+    this.renderQuickStart();
     document.getElementById('hero').style.display = 'none';
     document.getElementById('smart-bar').style.display = 'none';
     document.getElementById('action-bar').style.display = 'none';
     document.getElementById('searchIn').style.display = 'none';
     document.getElementById('searchIn').value = '';
-    this.folderFilter = ''; this.folderPanelOpen = false;
-    document.getElementById('folder-panel').style.display = 'none';
-    document.getElementById('folderBtn').classList.remove('on');
+    this.folderFilter = '';
+    this._autoThumbsDone = false; // let the next scan auto-warm thumbnails again
+    this.closeFolderModal();
+    document.getElementById('undoBtn').style.display = 'none'; // stale undo can't apply to a new scan
     document.getElementById('folderChip').style.display = 'none';
     document.getElementById('doneMsg').style.display = 'none';
     document.getElementById('expBtn').disabled = true;
@@ -1892,6 +2105,63 @@ const App = {
     document.getElementById('dirsIn').value = '';
   },
 
+  // ─── One-click start: common + recent folders on the landing screen ───
+  async renderQuickStart() {
+    const host = document.getElementById('quickStart');
+    if (!host) return;
+    host.innerHTML = '';
+    // Standard folders (Pictures/Downloads/…) resolved by the backend.
+    if (!this._commonFolders) {
+      try { this._commonFolders = (await fetch('/api/folders/common').then(r => r.json())).folders || []; }
+      catch (e) { this._commonFolders = []; }
+    }
+    if (this._commonFolders.length) {
+      const row = this.el('div', 'qs-row');
+      row.appendChild(this.el('span', 'qs-lbl', 'Quick scan'));
+      for (const f of this._commonFolders) {
+        const b = this.btn((f.icon || '📁') + ' ' + f.label, () => this.scanFolder(f.path), 'btn btn-ghost btn-sm');
+        b.title = 'Scan ' + f.path;
+        row.appendChild(b);
+      }
+      host.appendChild(row);
+    }
+    // Recently scanned (remembered in this browser).
+    const recent = this.getRecentFolders();
+    if (recent.length) {
+      const row = this.el('div', 'qs-row');
+      row.appendChild(this.el('span', 'qs-lbl', 'Recent'));
+      for (const p of recent.slice(0, 5)) {
+        const b = this.btn('🕑 ' + this.shortPath(p), () => this.scanFolder(p), 'btn btn-ghost btn-sm');
+        b.title = 'Re-scan ' + p;
+        row.appendChild(b);
+      }
+      host.appendChild(row);
+    }
+  },
+  // Fill the folder box with one path and start scanning immediately.
+  scanFolder(path) {
+    const ta = document.getElementById('dirsIn');
+    ta.value = path;
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    this.startScan();
+  },
+  getRecentFolders() {
+    try { return JSON.parse(localStorage.getItem('dc-recent') || '[]'); } catch (e) { return []; }
+  },
+  addRecentFolders(dirs) {
+    let r = this.getRecentFolders();
+    for (const d of (dirs || []).slice().reverse()) {
+      if (!d) continue;
+      r = r.filter(x => x !== d);
+      r.unshift(d);
+    }
+    try { localStorage.setItem('dc-recent', JSON.stringify(r.slice(0, 8))); } catch (e) { /* ignore quota */ }
+  },
+  shortPath(p) {
+    const parts = (p || '').split(/[\\/]/).filter(Boolean);
+    return parts.length <= 2 ? p : '…' + (p.includes('\\') ? '\\' : '/') + parts.slice(-2).join(p.includes('\\') ? '\\' : '/');
+  },
+
   async loadResults() {
     try {
       Logger.debug('Fetching /api/results');
@@ -1919,10 +2189,42 @@ const App = {
       Logger.debug('Total images across groups: ' + totalImgs);
 
       this.applyFilters();
+      this.maybeAutoThumbs(); // warm thumbnails in the background (covers warm-cache re-scans)
     } catch (e) {
       Logger.error('Load results failed', e);
       this.toast('Load error: ' + e.message, 'err');
     }
+  },
+
+  // After a scan, kick off thumbnail generation automatically so the grid fills
+  // in without the user clicking anything. It runs in the background (server-side
+  // worker pool), skips already-cached thumbnails instantly, and stays quiet
+  // (no toasts) since the progress bar is feedback enough. Cold scans already
+  // wrote thumbnails during decode, so this just confirms-and-skips for them;
+  // warm-cache re-scans (no decode) get their missing thumbnails generated here.
+  maybeAutoThumbs() {
+    if (this._autoThumbsDone || this.thumbTimer) return;
+    if (!this.groups.length) return;
+    // Count the media files an auto-warm would have to (re)generate.
+    let media = 0;
+    for (const g of this.groups) for (const im of (g.images || [])) {
+      const p = im.path || '';
+      if (isVideoPath(p) || isImagePath(p)) media++;
+    }
+    if (!media) return;
+    this._autoThumbsDone = true;
+    // Guard: auto-warming a LARGE result set is a long, CPU-heavy decode job
+    // (HEIC especially) that pins the machine and starves the UI — exactly the
+    // "Failed to fetch" storm seen on a 12k-image library. Above this size we
+    // skip the bulk warm and let thumbnails load on-demand as the user scrolls
+    // (only visible tiles decode); they can still click "Generate thumbnails".
+    const AUTO_LIMIT = 500;
+    if (media > AUTO_LIMIT) {
+      Logger.info('Auto thumbnail warm skipped — ' + media + ' media files (> ' + AUTO_LIMIT +
+        '); using on-demand thumbnails. Click "Generate thumbnails" to warm them all.');
+      return;
+    }
+    this.startThumbGen(true); // auto = quiet
   },
 
   applyFilters() {
@@ -1941,9 +2243,9 @@ const App = {
       });
     }
 
-    // Folder filter — keep only groups that have at least one copy in the folder
+    // Folder filter — keep groups with at least one copy at/under the chosen folder
     if (this.folderFilter) {
-      gs = gs.filter(g => (g.images||[]).some(img => img.dir === this.folderFilter));
+      gs = gs.filter(g => (g.images||[]).some(img => this.inFolderTree(img.dir, this.folderFilter)));
     }
 
     switch (this.sort) {
@@ -1956,7 +2258,6 @@ const App = {
     this.page = 0; // a changed result set always starts at the first page
     this.render();
     this.renderHero();
-    if (this.folderPanelOpen) this.renderFolderPanel();
   },
 
   setSort(s, el) {
@@ -2072,12 +2373,44 @@ const App = {
         sorted.slice(1).forEach(im => this.selPaths.add(im.path));
       }
     }
-    this.groups.forEach(g => this.refreshGroupCBs(g.id)); // only rendered cards have DOM; rest reflect on navigation
+    this.refreshRenderedCBs();
     this.updateDelBtn();
     const n = this.selPaths.size;
     if (mode === 'none')      this.toast('Selection cleared', 'info');
     else if (mode === 'all')  this.toast('Selected all ' + n + ' file' + (n !== 1 ? 's' : '') + ' (every copy)', n ? 'info' : 'err');
     else                      this.toast('Selected ' + n + ' duplicate' + (n !== 1 ? 's' : '') + ' across all pages', n ? 'info' : 'err');
+  },
+
+  // Plain-language confidence for a group, so users instantly know how safe it
+  // is to delete: byte-identical → "Identical"; otherwise a word + the % match.
+  confidenceLabel(g) {
+    if (g.exact) return { text: 'Identical', cls: 'b-exact' };
+    const pct = Math.round((g.similarity || 0) * 100);
+    let word = 'Similar';
+    if (pct >= 95) word = 'Near-identical';
+    else if (pct >= 85) word = 'Very similar';
+    return { text: word + ' · ' + pct + '%', cls: 'b-sim' };
+  },
+
+  // Pick the best copy to KEEP in a group and explain why: highest resolution,
+  // then largest file, then oldest (the likely original). Mirrors Smart Cleanup.
+  recommendedKeep(imgs) {
+    if (!imgs || !imgs.length) return { index: -1, reason: '' };
+    const res = x => (x.width || 0) * (x.height || 0);
+    let best = 0;
+    for (let i = 1; i < imgs.length; i++) {
+      const a = imgs[best], b = imgs[i];
+      if (res(b) > res(a) ||
+         (res(b) === res(a) && (b.size || 0) > (a.size || 0)) ||
+         (res(b) === res(a) && (b.size || 0) === (a.size || 0) && new Date(b.mod_time) < new Date(a.mod_time))) best = i;
+    }
+    const k = imgs[best];
+    const maxRes = Math.max(...imgs.map(res));
+    const maxSize = Math.max(...imgs.map(x => x.size || 0));
+    let reason = 'oldest copy (likely the original)';
+    if (res(k) === maxRes && imgs.some(x => res(x) < maxRes)) reason = 'highest resolution';
+    else if ((k.size || 0) === maxSize && imgs.some(x => (x.size || 0) < maxSize)) reason = 'largest file';
+    return { index: best, reason };
   },
 
   buildGroupCard(g) {
@@ -2088,9 +2421,9 @@ const App = {
     const hd = this.el('div', 'gcard-hd');
     const hdl = this.el('div', 'gcard-hd-l');
     const algoTag = g.algorithm ? g.algorithm.toUpperCase() : (g.exact ? 'EXACT' : 'PERCEPTUAL');
-    const badgeText = g.exact ? 'EXACT' : '~' + Math.round(g.similarity * 100) + '% MATCH';
-    const badge = this.el('span', 'badge ' + (g.exact ? 'b-exact' : 'b-sim'), badgeText);
-    badge.title = algoTag + (g.exact ? ' — byte-identical' : ' — visually similar');
+    const conf = this.confidenceLabel(g); // plain-language confidence, e.g. "Near-identical · 98%"
+    const badge = this.el('span', 'badge ' + conf.cls, conf.text);
+    badge.title = algoTag + (g.exact ? ' — byte-for-byte identical' : ' — visually similar (' + Math.round(g.similarity * 100) + '% match)');
     hdl.appendChild(badge);
     const ginfo = this.el('span', 'ginfo');
     ginfo.innerHTML = imgs.length + ' images &nbsp;·&nbsp; Total: <b>' + this.fmtSz(g.total_size) +
@@ -2107,18 +2440,32 @@ const App = {
     hd.appendChild(hdr);
     card.appendChild(hd);
 
-    // Image row
+    // Image row — cap how many tiles build up-front. Big groups (dozens of
+    // near-dupes) otherwise create hundreds of DOM nodes per card; the rest load
+    // behind a "+N more" tile. Selection is path-based (selPaths) and tiles build
+    // in g.images order, so capping never desyncs checkboxes or preview indices.
     const row = this.el('div', 'imgs-row' + (this.view === 'list' ? ' list' : ''));
     if (imgs.length === 0) {
       row.innerHTML = '<div style="padding:30px; color:var(--muted); font-size:12px">No images in this group.</div>';
     } else {
-      imgs.forEach((img, i) => {
-        try {
-          row.appendChild(this.buildImageItem(g, i, img));
-        } catch (e) {
-          Logger.error('Failed to build image item ' + i + ' in group ' + g.id, e);
-        }
-      });
+      const keep = this.recommendedKeep(imgs); // {index, reason} — the best copy to keep
+      const CAP = 12;
+      const shown = Math.min(imgs.length, CAP);
+      for (let i = 0; i < shown; i++) {
+        try { row.appendChild(this.buildImageItem(g, i, imgs[i], keep)); }
+        catch (e) { Logger.error('Failed to build image item ' + i + ' in group ' + g.id, e); }
+      }
+      if (imgs.length > CAP) {
+        const more = this.el('div', 'img-more', '+ ' + (imgs.length - CAP) + ' more');
+        more.addEventListener('click', () => {
+          for (let i = CAP; i < imgs.length; i++) {
+            try { row.insertBefore(this.buildImageItem(g, i, imgs[i], keep), more); }
+            catch (e) { Logger.error('Failed to build image item ' + i + ' in group ' + g.id, e); }
+          }
+          more.remove(); // tiles are now contiguous 0..n-1, so checkbox indices stay aligned
+        });
+        row.appendChild(more);
+      }
     }
     card.appendChild(row);
 
@@ -2137,7 +2484,7 @@ const App = {
     return card;
   },
 
-  buildImageItem(g, i, img) {
+  buildImageItem(g, i, img, keep) {
     if (!img || typeof img !== 'object') {
       throw new Error('Invalid image object at index ' + i);
     }
@@ -2150,6 +2497,14 @@ const App = {
     // Thumbnail (FIXED HEIGHT 160px)
     const thumb = this.el('div', 'img-thumb');
     thumb.addEventListener('click', () => this.openPreview(g.id, i));
+
+    // Suggested-keeper badge — marks the best copy to keep (highest resolution,
+    // then largest, then oldest) with the reason, so the user knows what to keep.
+    if (keep && keep.index === i) {
+      const kb = this.el('span', 'best-badge', '★ Best');
+      kb.title = 'Suggested keep — ' + keep.reason;
+      thumb.appendChild(kb);
+    }
 
     // Always-present fallback (shows until image loads or if it fails)
     const fb = this.el('div', 'img-thumb-fallback', '🖼️');
@@ -2221,7 +2576,7 @@ const App = {
     const parts = [];
     if (img.megapixel > 0) parts.push(img.megapixel.toFixed(1) + 'MP');
     if (img.width > 0) parts.push(img.width + '×' + img.height);
-    if (img.duration > 0) parts.push(App.fmtDuration(img.duration));
+    if (img.duration > 0) parts.push(App.fmtVideoDuration(img.duration));
     parts.push(this.fmtSz(img.size));
     detail.innerHTML = this.esc(parts.join(' · ')) +
       '<br>🕑 ' + this.esc(this.fmtDate(img.mod_time)) +
@@ -2302,6 +2657,15 @@ const App = {
       }
     });
   },
+  // Sync checkboxes for ONLY the rendered page's cards. Selection lives in
+  // selPaths, so other pages reflect it when they next render — this keeps
+  // "select all / smart cleanup" O(visible) instead of O(all groups), which
+  // matters when a scan finds thousands of groups.
+  refreshRenderedCBs() {
+    const start = this.page * this.pageSize;
+    const pageGroups = this.dispGroups.slice(start, start + this.pageSize);
+    for (const g of pageGroups) this.refreshGroupCBs(g.id);
+  },
   updateDelBtn() {
     const n = this.selPaths.size;
     const btn = document.getElementById('delSelBtn');
@@ -2338,7 +2702,7 @@ const App = {
 
   clearAllSel() {
     this.selPaths.clear();
-    this.groups.forEach(g => this.refreshGroupCBs(g.id));
+    this.refreshRenderedCBs();
     this.updateDelBtn();
   },
 
@@ -2360,42 +2724,131 @@ const App = {
     return [...m.values()].sort((a,b) => b.dupeBytes - a.dupeBytes || b.items - a.items);
   },
 
-  toggleFolderPanel() {
-    this.folderPanelOpen = !this.folderPanelOpen;
-    document.getElementById('folderBtn').classList.toggle('on', this.folderPanelOpen);
-    document.getElementById('folder-panel').style.display = this.folderPanelOpen ? '' : 'none';
-    if (this.folderPanelOpen) this.renderFolderPanel();
+  // Build a nested folder tree from the flat per-dir stats. Every node carries
+  // its SUBTREE totals (a parent shows everything underneath it); single-child
+  // chains (e.g. C:\Users\me\…\Photos) collapse into one row up to the first
+  // branch so the tree stays compact and drilling down stays meaningful.
+  folderTree() {
+    const stats = this.folderStats();
+    const sep = stats.some(s => s.dir.includes('\\')) ? '\\' : '/';
+    const roots = new Map();
+    const mk = (name, full) => ({ name, full, children: new Map(),
+      selfItems: 0, items: 0, dupes: 0, dupeBytes: 0 });
+    for (const s of stats) {
+      const segs = s.dir.split(/[\\/]/).filter(x => x.length);
+      if (!segs.length) continue;
+      let level = roots, full = '', node = null;
+      for (let i = 0; i < segs.length; i++) {
+        full = i === 0 ? segs[i] : full + sep + segs[i];
+        node = level.get(segs[i]) || mk(segs[i], full);
+        level.set(segs[i], node);
+        node.items += s.items; node.dupes += s.dupes; node.dupeBytes += s.dupeBytes;
+        level = node.children;
+      }
+      node.selfItems += s.items; // images that live directly in this exact dir
+    }
+    const collapse = (map) => {
+      for (const n of map.values()) {
+        collapse(n.children);
+        // fold away pure pass-through links (one child, no files of its own)
+        while (n.children.size === 1 && n.selfItems === 0) {
+          const only = [...n.children.values()][0];
+          n.name = n.name + sep + only.name;
+          n.full = only.full;
+          n.selfItems = only.selfItems;
+          n.children = only.children;
+        }
+      }
+    };
+    collapse(roots);
+    return [...roots.values()].sort((a, b) => b.dupeBytes - a.dupeBytes || b.items - a.items);
   },
 
-  renderFolderPanel() {
-    const p = document.getElementById('folder-panel');
-    if (!p) return;
-    const stats = this.folderStats();
-    p.innerHTML = '';
-    const hd = this.el('div', 'fp-hd');
-    hd.appendChild(this.el('h4', null, '📁 Folders containing duplicates'));
-    hd.appendChild(this.el('span', 'fp-sub', stats.length + ' folder' + (stats.length !== 1 ? 's' : '')));
-    p.appendChild(hd);
-    if (!stats.length) {
-      p.appendChild(this.el('div', 'fp-sub', 'Nothing to break down yet.'));
+  openFolderModal() {
+    const roots = this.folderTree();
+    this._folderRoots = roots;
+    this._folderExpanded = new Set(roots.map(r => r.full)); // top level open by default
+    const n = this.folderStats().length;
+    document.getElementById('fmInfo').textContent =
+      n + ' folder' + (n !== 1 ? 's' : '') + ' with duplicates';
+    this.renderFolderTree();
+    document.getElementById('folderModal').classList.add('open');
+  },
+
+  closeFolderModal() {
+    document.getElementById('folderModal').classList.remove('open');
+  },
+
+  expandAllFolders(open) {
+    const all = new Set();
+    const walk = (nodes) => nodes.forEach(n => {
+      if (n.children.size) { all.add(n.full); walk([...n.children.values()]); }
+    });
+    if (open) walk(this._folderRoots || []);
+    this._folderExpanded = open ? all : new Set();
+    this.renderFolderTree();
+  },
+
+  renderFolderTree() {
+    const tree = document.getElementById('fmTree');
+    tree.innerHTML = '';
+    const roots = this._folderRoots || [];
+    if (!roots.length) {
+      tree.appendChild(this.el('div', 'fp-sub', 'Nothing to break down yet.'));
       return;
     }
-    for (const s of stats) {
-      const row = this.el('div', 'fp-row');
-      const path = this.el('div', 'fp-path', s.dir); path.title = s.dir;
-      row.appendChild(path);
-      const stat = this.el('span', 'fp-stat');
-      stat.innerHTML = s.items + ' file' + (s.items !== 1 ? 's' : '') +
-        ' · removable <b>' + s.dupes + '</b> (' + this.fmtSz(s.dupeBytes) + ')';
-      row.appendChild(stat);
-      const acts = this.el('div', 'fp-actions');
-      const fb = this.btn('Filter', () => this.setFolderFilter(s.dir), 'btn btn-ghost btn-xs');
-      if (this.folderFilter === s.dir) fb.classList.add('on');
-      acts.appendChild(fb);
-      acts.appendChild(this.btn('Select dupes', () => this.selectFolderDupes(s.dir), 'btn btn-danger btn-xs'));
-      row.appendChild(acts);
-      p.appendChild(row);
+    roots.forEach(n => this.renderFolderNode(n, tree, 0));
+  },
+
+  renderFolderNode(node, container, depth) {
+    const hasKids = node.children.size > 0;
+    const expanded = this._folderExpanded.has(node.full);
+    const row = this.el('div', 'fnode-row');
+    row.style.paddingLeft = (6 + depth * 16) + 'px';
+
+    const tw = this.el('span', 'ftw', hasKids ? (expanded ? '−' : '+') : '');
+    if (hasKids) {
+      tw.classList.add('on');
+      tw.addEventListener('click', e => { e.stopPropagation(); this.toggleFolderNode(node.full); });
     }
+    row.appendChild(tw);
+
+    const nm = this.el('span', 'fname', '📁 ' + node.name); nm.title = node.full;
+    row.appendChild(nm);
+
+    const stat = this.el('span', 'fstat');
+    stat.innerHTML = node.items + ' file' + (node.items !== 1 ? 's' : '') +
+      ' · removable <b>' + node.dupes + '</b> (' + this.fmtSz(node.dupeBytes) + ')';
+    row.appendChild(stat);
+
+    const acts = this.el('span', 'factions');
+    const fb = this.btn('Filter', () => { this.setFolderFilter(node.full); this.closeFolderModal(); }, 'btn btn-ghost btn-xs');
+    if (this.folderFilter === node.full) fb.classList.add('on');
+    acts.appendChild(fb);
+    acts.appendChild(this.btn('Select dupes', () => this.selectFolderDupes(node.full), 'btn btn-danger btn-xs'));
+    row.appendChild(acts);
+    container.appendChild(row);
+
+    if (hasKids && expanded) {
+      [...node.children.values()]
+        .sort((a, b) => b.dupeBytes - a.dupeBytes || b.items - a.items)
+        .forEach(c => this.renderFolderNode(c, container, depth + 1));
+    }
+  },
+
+  toggleFolderNode(full) {
+    if (this._folderExpanded.has(full)) this._folderExpanded.delete(full);
+    else this._folderExpanded.add(full);
+    this.renderFolderTree();
+  },
+
+  // Subtree membership: is imgDir inside `base` (the folder itself or any
+  // descendant)? Lets a filter/select on a parent cover everything below it.
+  inFolderTree(imgDir, base) {
+    if (!imgDir || !base) return false;
+    if (imgDir === base) return true;
+    const sep = base.includes('\\') ? '\\' : '/';
+    return imgDir.startsWith(base + sep);
   },
 
   setFolderFilter(dir) {
@@ -2417,14 +2870,14 @@ const App = {
     this.applyFilters();
   },
 
-  // Select every duplicate copy located in `dir` for deletion — but NEVER all
-  // copies of a group: if a group's copies live ONLY in this folder, keep the
+  // Select every duplicate copy at or beneath `base` for deletion — but NEVER all
+  // copies of a group: if a group's copies live ONLY under this folder, keep the
   // best one (highest resolution, then largest) and select the rest.
-  selectFolderDupes(dir) {
+  selectFolderDupes(base) {
     let added = 0;
     for (const g of this.groups) {
       const imgs = g.images || [];
-      const inFolder = imgs.filter(im => im.dir === dir);
+      const inFolder = imgs.filter(im => this.inFolderTree(im.dir, base));
       if (!inFolder.length) continue;
       let toSelect;
       if (inFolder.length < imgs.length) {
@@ -2436,9 +2889,9 @@ const App = {
       }
       toSelect.forEach(im => { if (!this.selPaths.has(im.path)) { this.selPaths.add(im.path); added++; } });
     }
-    this.groups.forEach(g => this.refreshGroupCBs(g.id));
+    this.refreshRenderedCBs();
     this.updateDelBtn();
-    this.toast('Selected ' + added + ' duplicate' + (added !== 1 ? 's' : '') + ' in this folder', added ? 'info' : 'err');
+    this.toast('Selected ' + added + ' duplicate' + (added !== 1 ? 's' : '') + ' under this folder', added ? 'info' : 'err');
   },
 
   // ─── Reclaimable-space hero + Smart Cleanup / Review fork ───
@@ -2469,7 +2922,7 @@ const App = {
         ((b.width * b.height) - (a.width * a.height)) || ((b.size || 0) - (a.size || 0)));
       sorted.slice(1).forEach(im => this.selPaths.add(im.path));
     }
-    this.groups.forEach(g => this.refreshGroupCBs(g.id));
+    this.refreshRenderedCBs();
     this.updateDelBtn();
     this.reviewResults();
     const n = this.selPaths.size;
@@ -2479,7 +2932,19 @@ const App = {
 
   reviewResults() {
     const r = document.getElementById('results');
-    if (r) r.scrollIntoView({behavior: 'smooth', block: 'start'});
+    if (!r) return;
+    // #results is itself the scroll container (flex:1; overflow-y:auto), so
+    // scrollIntoView() on it does nothing — it has no scrollable ancestor.
+    // Scroll its OWN content to the top and flash the first group so the click
+    // always produces a visible response, even when the grid is already on screen.
+    r.scrollTo({ top: 0, behavior: 'smooth' });
+    const first = r.querySelector('.gcard');
+    if (first) {
+      first.classList.remove('flash');
+      void first.offsetWidth; // force reflow so the animation restarts on repeat clicks
+      first.classList.add('flash');
+      setTimeout(() => first.classList.remove('flash'), 1300);
+    }
   },
 
   // ─── Smart select ───
@@ -2500,7 +2965,7 @@ const App = {
       }).then(r => r.json());
       this.selPaths.clear();
       (d.to_delete || []).forEach(p => this.selPaths.add(p));
-      this.groups.forEach(g => this.refreshGroupCBs(g.id));
+      this.refreshRenderedCBs();
       this.updateDelBtn();
       this.toast('Selected ' + this.selPaths.size + ' duplicates', 'info');
     } catch (e) {
@@ -2544,7 +3009,7 @@ const App = {
       const d = await resp.json();
       this.selPaths.clear();
       (d.to_delete || []).forEach(p => this.selPaths.add(p));
-      this.groups.forEach(g => this.refreshGroupCBs(g.id));
+      this.refreshRenderedCBs();
       this.updateDelBtn();
       this.toast('Rule "' + name + '" selected ' + this.selPaths.size + ' duplicates', 'info');
     } catch (e) {
@@ -2604,21 +3069,91 @@ const App = {
   async deleteSelected() {
     const paths = Array.from(this.selPaths);
     if (!paths.length) return;
-    // Safety net: flag any group where EVERY copy is selected (would leave no
-    // file at all — i.e. the original would be gone too).
-    let wipeGroups = 0;
+    const s = this.deletionSummary();
+    const toTrash = this.isTrash();
+
+    const body = document.getElementById('cfBody');
+    body.innerHTML = '';
+    const row = (k, v, red) => {
+      const r = this.el('div', 'cf-row');
+      r.appendChild(this.el('span', 'cf-k', k));
+      r.appendChild(this.el('b', red ? 'red' : null, v));
+      return r;
+    };
+    body.appendChild(row('Files to remove', s.count.toLocaleString(), true));
+    body.appendChild(row('Space reclaimed', this.fmtSz(s.totalSize)));
+    body.appendChild(row('Across folders', s.folders.toLocaleString()));
+    body.appendChild(row('Copies kept', s.kept.toLocaleString()));
+    const mode = this.el('div', 'cf-mode');
+    mode.innerHTML = toTrash
+      ? 'Destination: <b>Recycle Bin</b> — recoverable, you can Undo afterwards.'
+      : 'Destination: <b>permanent delete</b> — this cannot be undone.';
+    body.appendChild(mode);
+    if (s.wipeGroups > 0) {
+      body.appendChild(this.el('div', 'cf-warn',
+        '⚠ ' + s.wipeGroups + ' group(s) would have every copy selected — the server still ' +
+        'spares one file per group, so an original is always kept.'));
+    }
+
+    document.getElementById('cfTitle').textContent = toTrash ? 'Move to Recycle Bin?' : 'Permanently delete?';
+    const ok = document.getElementById('cfOk');
+    ok.textContent = toTrash ? 'Move ' + s.count + ' to Recycle Bin' : 'Delete ' + s.count + ' permanently';
+    ok.onclick = async () => { this.closeConfirm(); await this.doDelete(paths, toTrash); };
+    document.getElementById('confirmModal').classList.add('open');
+  },
+
+  closeConfirm() {
+    document.getElementById('confirmModal').classList.remove('open');
+  },
+
+  // Summarise the current selection for the confirm dialog: file count, total
+  // bytes, distinct folders, surviving copies, and how many groups would have
+  // every copy selected (a "wipe" the server still guards against).
+  deletionSummary() {
+    let count = 0, totalSize = 0, kept = 0, wipeGroups = 0;
+    const folders = new Set();
     for (const g of this.groups) {
       const imgs = g.images || [];
-      if (imgs.length && imgs.every(im => this.selPaths.has(im.path))) wipeGroups++;
+      let sel = 0;
+      for (const im of imgs) {
+        if (this.selPaths.has(im.path)) {
+          sel++; count++; totalSize += im.size || 0; folders.add(im.dir || '');
+        }
+      }
+      if (sel > 0) {
+        kept += imgs.length - sel;
+        if (sel === imgs.length) wipeGroups++;
+      }
     }
-    const verb = this.isTrash() ? 'Move to Recycle Bin' : 'Permanently delete';
-    let msg = verb + ' ' + paths.length + ' file(s)?';
-    if (wipeGroups > 0) {
-      msg = '⚠ WARNING: ' + wipeGroups + ' duplicate group(s) would have EVERY copy deleted — ' +
-        'no file kept, including the original.\n\n' + msg + '\n\nContinue anyway?';
+    return { count, totalSize, folders: folders.size, kept, wipeGroups };
+  },
+
+  async undoDelete() {
+    const btn = document.getElementById('undoBtn');
+    btn.disabled = true;
+    try {
+      const d = await fetch('/api/restore', { method: 'POST' }).then(r => r.json());
+      const n = (d.restored || []).length;
+      const f = Object.keys(d.failed || {}).length;
+      if (n) this.toast('Restored ' + n + ' file' + (n > 1 ? 's' : '') + ' from the Recycle Bin', 'ok');
+      if (f) { this.toast(f + ' file' + (f > 1 ? 's' : '') + ' could not be restored', 'err'); Logger.warn('Restore failures: ' + JSON.stringify(d.failed)); }
+      btn.style.display = 'none';
+      // Reload the restored result set the server rolled back to.
+      const r2 = await fetch('/api/results').then(r => r.json());
+      this.groups = r2.groups || [];
+      this.byId.clear();
+      this.groups.forEach(g => this.byId.set(g.id, g));
+      const prog = await fetch('/api/progress').then(r => r.json());
+      document.getElementById('stGr').textContent = (prog.groups || 0).toLocaleString();
+      document.getElementById('stWa').textContent = (prog.wasted_mb || 0).toFixed(1) + ' MB';
+      this.applyFilters();
+      this.renderHero();
+    } catch (e) {
+      Logger.error('Undo failed', e);
+      this.toast('Undo error: ' + e.message, 'err');
+    } finally {
+      btn.disabled = false;
     }
-    if (!confirm(msg)) return;
-    await this.doDelete(paths, this.isTrash());
   },
   async delOne(gid, idx) {
     const g = this.byId.get(gid);
@@ -2652,17 +3187,35 @@ const App = {
   async doDelete(paths, toTrash) {
     try {
       Logger.info('Deleting ' + paths.length + ' files (toTrash=' + toTrash + ')');
+      // Index path→size and path→group from the CURRENT (pre-prune) results, so
+      // we can summarise freed space using only the files the server actually
+      // removed (not the requested set — a failed delete frees nothing).
+      const sizeByPath = new Map(), groupByPath = new Map();
+      for (const g of this.groups) for (const im of (g.images || [])) {
+        sizeByPath.set(im.path, im.size || 0);
+        groupByPath.set(im.path, g.id);
+      }
       const d = await fetch('/api/delete', {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({paths, to_trash: toTrash})
       }).then(r => r.json());
-      const n = (d.deleted || []).length;
+      const deleted = d.deleted || [];
+      const n = deleted.length;
       const f = Object.keys(d.failed || {}).length;
-      if (n) this.toast((toTrash ? 'Recycled' : 'Deleted') + ' ' + n + ' file' + (n>1?'s':''), 'ok');
+      if (n) {
+        let freed = 0; const keptGroupIds = new Set();
+        for (const p of deleted) { freed += sizeByPath.get(p) || 0; if (groupByPath.has(p)) keptGroupIds.add(groupByPath.get(p)); }
+        const keptGroups = keptGroupIds.size;
+        this.toast('Freed ' + this.fmtSz(freed) + ' — ' + (toTrash ? 'recycled ' : 'deleted ') + n +
+          ' duplicate' + (n > 1 ? 's' : '') + (keptGroups ? ', kept ' + keptGroups + ' original' + (keptGroups > 1 ? 's' : '') : ''), 'ok');
+      }
       if (f) {
         this.toast(f + ' file' + (f>1?'s':'') + ' failed', 'err');
         Logger.warn('Delete failures: ' + JSON.stringify(d.failed));
       }
+      // Offer one-click Undo only when the server recycled files (recoverable);
+      // a permanent delete clears the affordance.
+      document.getElementById('undoBtn').style.display = d.can_undo ? '' : 'none';
       (d.deleted || []).forEach(p => this.selPaths.delete(p));
       const r2 = await fetch('/api/results').then(r => r.json());
       this.groups = r2.groups || [];

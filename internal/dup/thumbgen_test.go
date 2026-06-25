@@ -60,6 +60,57 @@ func TestEncodeImageThumb_BadFile(t *testing.T) {
 	}
 }
 
+// TestEncodeThumbDirect covers the scan-piggyback encoder: it must produce a
+// valid JPEG that fits thumbStdSize with the same dimensions resizeFitFast picks
+// (so a scan-written thumbnail is indistinguishable from an on-demand one), all
+// without allocating a full-size NRGBA.
+func TestEncodeThumbDirect(t *testing.T) {
+	// A non-square source so aspect-ratio math is actually exercised.
+	src := image.NewNRGBA(image.Rect(0, 0, 800, 500))
+	for y := 0; y < 500; y++ {
+		for x := 0; x < 800; x++ {
+			src.Set(x, y, color.NRGBA{R: uint8(x % 256), G: uint8(y % 256), B: 64, A: 255})
+		}
+	}
+
+	data, err := encodeThumbDirect(src)
+	if err != nil {
+		t.Fatalf("encodeThumbDirect: %v", err)
+	}
+	got, err := jpeg.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("decode thumb: %v", err)
+	}
+	gb := got.Bounds()
+	if gb.Dx() > thumbStdSize || gb.Dy() > thumbStdSize {
+		t.Errorf("thumb %dx%d exceeds %d", gb.Dx(), gb.Dy(), thumbStdSize)
+	}
+	// Must match resizeFitFast's chosen dimensions exactly.
+	want := resizeFitFast(src, thumbStdSize, thumbStdSize).Bounds()
+	if gb.Dx() != want.Dx() || gb.Dy() != want.Dy() {
+		t.Errorf("dims %dx%d, want %dx%d (resizeFitFast parity)", gb.Dx(), gb.Dy(), want.Dx(), want.Dy())
+	}
+}
+
+// TestEncodeThumbDirect_NonZeroBounds verifies the encoder honours a source whose
+// bounds don't start at (0,0) — the path a sub-image / cropped decode can hit.
+func TestEncodeThumbDirect_NonZeroBounds(t *testing.T) {
+	full := image.NewNRGBA(image.Rect(0, 0, 600, 600))
+	for y := 0; y < 600; y++ {
+		for x := 0; x < 600; x++ {
+			full.Set(x, y, color.NRGBA{R: uint8(x), G: uint8(y), B: 200, A: 255})
+		}
+	}
+	sub := full.SubImage(image.Rect(100, 100, 500, 400)) // 400x300, origin (100,100)
+	data, err := encodeThumbDirect(sub)
+	if err != nil {
+		t.Fatalf("encodeThumbDirect(sub): %v", err)
+	}
+	if _, err := jpeg.Decode(bytes.NewReader(data)); err != nil {
+		t.Fatalf("decode sub thumb: %v", err)
+	}
+}
+
 func TestWriteThumbAtomic(t *testing.T) {
 	dir := t.TempDir()
 	dst := filepath.Join(dir, "ab", "cd.jpg")

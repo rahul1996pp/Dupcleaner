@@ -1,5 +1,7 @@
 # Runtime data (machine-specific / auto-created)
 cache.json
+cache.json.tmp
+cache.log
 session.json
 dupcleaner.log
 tools.json
